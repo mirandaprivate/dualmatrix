@@ -5,7 +5,7 @@
 //! The experiment parameters are configured in config.rs
 //! 
 //! Use the following command to run the experiment:
-//! ''' cargo bench --release '''
+//! ''' cargo bench'''
 //! 
 //! Note using the release mode is important for the performance.
 //! 
