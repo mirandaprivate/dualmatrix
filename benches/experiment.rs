@@ -187,7 +187,7 @@ fn experiment(log_file: &mut File) {
 
 fn experiment_dense(log_file: &mut File) {
 
-    println!(" ** Experiment for zkMatrix, Matrix Dim 2e{:?} times 2e{:?}; Number of non-zero elements: 2e{:?} ** ",
+    println!(" ** Experiment for dualMatrix, Matrix Dim 2e{:?} times 2e{:?}; Number of non-zero elements: 2e{:?} ** ",
     LOG_DIM/2,
     LOG_DIM/2,
     LOG_DIM,
