@@ -12,7 +12,6 @@ pub mod mat;
 pub mod setup;
 
 pub mod utils;
-pub mod protocols;
 pub mod zkprotocols;
 
 pub mod config;

@@ -11,6 +11,7 @@
 pub mod zk_trans;
 pub mod zk_scalars;
 
+pub mod pip;
 pub mod zk_ip_gt;
 pub mod zk_scalar_proj;
 pub mod zk_left_proj;

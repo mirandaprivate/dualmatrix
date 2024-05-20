@@ -42,7 +42,9 @@ pub struct GtElement { pub value: Gt }
 pub struct GtElementPack { pub value: Gt }
 
 
-
+pub trait GenRandom {
+    fn rand() -> Self;
+}
 
 pub trait ConvertToZp: Copy + Clone + Send + Sync {
     fn to_zp(&self) -> ZpElement;
@@ -1123,12 +1125,29 @@ impl Double for GtElement{
     }
 }
 
+impl GenRandom for G1Element {
+    fn rand() -> Self {
+        let random = ZpElement::rand();
+        G1Element { value: G1Projective::generator() * random.value }
+    }
+}
+
+impl GenRandom for G2Element {
+    fn rand() -> Self {
+        let random = ZpElement::rand();
+        G2Element { value: G2Projective::generator() * random.value }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_curve() {
+        G1Element::rand();
+        G2Element::rand();
+
         let scalar_zero = ZpElement::zero();
         let g1_zero = G1Element::zero();
         let g2_zero = G2Element::zero();

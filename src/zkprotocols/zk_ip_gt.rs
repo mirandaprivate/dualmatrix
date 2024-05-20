@@ -17,7 +17,7 @@ use crate::utils::curve::{
 use crate::utils::dirac;
 use crate::utils::fiat_shamir::{TranElem, TranSeq};
 
-use crate::protocols::pip::{PipG1, PipG2};
+use crate::zkprotocols::pip::{PipG1, PipG2};
 
 use crate::zkprotocols::zk_trans::ZkTranSeqProver;
 use crate::zkprotocols::zk_scalars::{ZkSchnorr, ZkMulScalar, ZkSemiMulScalar};
