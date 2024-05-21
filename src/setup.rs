@@ -8,8 +8,11 @@ use serde::{Serialize, Deserialize};
 use crate::utils::curve::GenRandom;
 use crate::utils::curve::{G1Element, G2Element, GtElement};
 
+use crate::utils::dirac::inner_product;
 use crate::utils::to_file::FileIO;
 
+use rayon::{ThreadPoolBuilder, prelude::*};
+use crate::config::NUM_THREADS;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct SRS {
@@ -21,6 +24,9 @@ pub struct SRS {
     pub h_hat_vec: Vec<G2Element>,
     pub g_hat_prime_vec: Vec<G1Element>,
     pub h_hat_prime_vec: Vec<G2Element>,
+    pub delta: GtElement,
+    pub delta_g: GtElement,
+    pub delta_h: GtElement,
 }
 
 impl SRS {
@@ -29,20 +35,49 @@ impl SRS {
         let g_hat = G1Element::rand();
         let h_hat = G2Element::rand();
 
+        let pool = ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build()
+        .unwrap();
 
-        let g_hat_vec = (0..q)
-        .map(|_| G1Element::rand()).collect();
+        let g_hat_vec: Vec<G1Element> = pool.install(|| {
+             (0..q)
+                .into_par_iter()
+                .map(|_| G1Element::rand())
+                .collect()
+            }
+        );
 
-        let g_hat_prime_vec = (0..q)
-        .map(|_| G1Element::rand()).collect();
+        let g_hat_prime_vec: Vec<G1Element> = pool.install(|| {
+            (0..q)
+               .into_par_iter()
+               .map(|_| G1Element::rand())
+               .collect()
+           }
+       );
 
-        let h_hat_vec = (0..q)
-        .map(|_| G2Element::rand()).collect();
+       let h_hat_vec: Vec<G2Element> = pool.install(|| {
+                (0..q)
+                .into_par_iter()
+                .map(|_| G2Element::rand())
+                .collect()
+            }
+        );
 
-        let h_hat_prime_vec = (0..q)
-        .map(|_| G2Element::rand()).collect();
+        let h_hat_prime_vec: Vec<G2Element> = pool.install(|| {
+            (0..q)
+                .into_par_iter()
+                .map(|_| G2Element::rand())
+                .collect()
+            }
+        );
+
 
         let blind_base = G1Element::rand() * G2Element::rand();
+
+        let delta = inner_product(&g_hat_vec, &h_hat_vec);
+        let delta_g = inner_product(&g_hat_vec, &h_hat_prime_vec);
+        let delta_h = inner_product(&h_hat_vec, &g_hat_prime_vec);
 
         let srs = Self {
             q,
@@ -53,10 +88,13 @@ impl SRS {
             h_hat_vec,
             g_hat_prime_vec,
             h_hat_prime_vec,
+            delta,
+            delta_g,
+            delta_h,
         };
 
         let log_q = (q as f64).log2() as usize;
-        println!("---");
+
         srs.to_file(format!("srs_2e{:?}.srs", log_q), true)
         .unwrap();
 
@@ -84,7 +122,6 @@ mod tests {
                 format!("srs_2e{:?}.srs", (Q_TEST as f64).log2() as usize) ),
                 true,
         ).unwrap();
-        println!("srs: {:?}", srs);
         assert_eq!(srs, srs_read);
     }
 }

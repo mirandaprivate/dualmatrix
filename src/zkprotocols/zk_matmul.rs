@@ -10,22 +10,24 @@
 //! C_a = < \vec{G}, \bm{a}, \vec{H} > + a_tilde * blind_base,
 //! C_b = < \vec{G}, \bm{b}, \vec{H} > + b_tilde * blind_base,
 //! 
-use crate::mat::Mat;
+use crate::mat::{Mat,ToZpMat};
 use crate::setup::SRS;
 
 use crate::utils::curve::{
-    ZpElement, GtElement, G1Element, G2Element,
+    ZpElement, GtElement, G1Element,
     ConvertToZp,
 };
-use crate::utils::dirac::{self, BraKetZp};
+use crate::utils::dirac::{self, vec_scalar_mul, BraKetZp};
 use crate::utils::fiat_shamir::{TranElem, TranSeq};
 
-use crate::zkprotocols::zk_left_proj::{ZkLeftProjPoly, ZkLeftProjProof};
-use crate::zkprotocols::zk_right_proj::{ZkRightProjPoly, ZkRightProjProof};
-use crate::zkprotocols::zk_scalar_proj::{ZkScalarProjPoly, ZkScalarProjCmProof};
+use crate::zkprotocols::zk_proj::{ZkProjPoly, ZkProjProtocol};
 use crate::zkprotocols::zk_ip_gt::ZkIpGt;
+use crate::zkprotocols::zk_sip::{ZkSipG1,ZkSipG2};
+use crate::zkprotocols::pip::Pip;
 
 use crate::zkprotocols::zk_trans::ZkTranSeqProver;
+
+
 
 
 /// Interface for the matMul protocol
@@ -65,18 +67,18 @@ impl ZkMatMul {
         mat_a: Mat<U>, 
         mat_b: Mat<V>,
         cache_c: &Vec<G1Element>,
-        cache_a: &Vec<G2Element>,
+        cache_a: &Vec<G1Element>,
         cache_b: &Vec<G1Element>,
         c_tilde: ZpElement,
         a_tilde: ZpElement,
         b_tilde: ZpElement,
     ) where 
         T: 'static + ConvertToZp,
-        Mat<T>: 'static + BraKetZp, 
+        Mat<T>: 'static + BraKetZp + ToZpMat, 
         U: 'static + ConvertToZp,
-        Mat<U>: 'static + BraKetZp, 
+        Mat<T>: 'static + BraKetZp + ToZpMat, 
         V: 'static + ConvertToZp,
-        Mat<V>: 'static + BraKetZp, 
+        Mat<T>: 'static + BraKetZp + ToZpMat, 
     {
         
         zk_trans_seq.push_without_blinding(TranElem::Gt(self.c_blind));
@@ -102,102 +104,216 @@ impl ZkMatMul {
             panic!("Invalid shape when proving MatMul");
         }
 
+        let mat_a_zp = mat_a.to_zp_mat();
+        std::mem::drop(mat_a);
+        let mat_b_zp = mat_b.to_zp_mat();
+        std::mem::drop(mat_b);
+        let mat_c_zp = mat_c.to_zp_mat();
+        std::mem::drop(mat_c);
+
+        let q = srs.q;
+        let max_m = std::cmp::max(m, l);
+        let max_n = std::cmp::max(n, l);
         
-        let step = y.pow(n as u64);
+        let step = y.pow(q as u64);
+
         let y_l = std::iter::successors(
                 Some(ZpElement::from(1 as u64)), 
                 |&x| Some(x * step)
-            ).take(m).collect::<Vec<ZpElement>>();
+            ).take(max_m).collect::<Vec<ZpElement>>();
         let y_r = std::iter::successors(
                 Some(ZpElement::from(1 as u64)),
                 |&x| Some(x * y)
-           ).take(n).collect::<Vec<ZpElement>>();
+           ).take(max_n).collect::<Vec<ZpElement>>();
 
-        let d = mat_c.braket_zp(&y_l, &y_r);
-        let a_y = mat_a.bra_zp(&y_l);
-        let b_y = mat_b.ket_zp(&y_r);
+
+        let a_y = mat_a_zp.bra_zp(&y_l);
+        let b_y = mat_b_zp.bra_zp(&y_l);
+        let c_y = mat_c_zp.bra_zp(&y_l);
+
+        let b_yr = mat_b_zp.ket_zp(&y_r);
+
+        let a_yy = dirac::inner_product(&a_y, &y_r);
+        let b_yy = dirac::inner_product(&b_y, &y_r);
+        let c_yy = dirac::inner_product(&c_y, &y_r);
 
         let g_0 = srs.g_hat;
         let h_0 = srs.h_hat;
-        let u_0 = g_0 * h_0;
         
-        let d_com = d * u_0;
         let a_y_com = g_0 * dirac::inner_product(
             &a_y,
             &srs.h_hat_vec[0..l].to_vec(), 
         );
-        let b_y_com = h_0 * dirac::inner_product(
-            &b_y,
+        let b_yr_com = h_0 * dirac::inner_product(
+            &b_yr,
             &srs.g_hat_vec[0..l].to_vec(), 
         );
 
 
-        let (d_blind, d_tilde) =
-            zk_trans_seq.push_gen_blinding(TranElem::Gt(d_com));
         let (ay_blind, ay_tilde) =
             zk_trans_seq.push_gen_blinding(TranElem::Gt(a_y_com));
-        let (by_blind, by_tilde) =
-            zk_trans_seq.push_gen_blinding(TranElem::Gt(b_y_com));
+        let (byr_blind, byr_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Gt(b_yr_com));
 
-        let ip1 = ZkScalarProjPoly::new(
-            d_blind, 
-            self.c_blind,
-            (m,n), 
-            y,
+        let (cyy_blind, cyy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(c_yy));
+        let (ayy_blind, ayy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(a_yy));
+        let (byy_blind, byy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(b_yy));
+
+        let yp = zk_trans_seq.gen_challenge();
+
+        let stepp = yp.pow(q as u64);
+
+        let yp_l = std::iter::successors(
+                Some(ZpElement::from(1 as u64)), 
+                |&x| Some(x * stepp)
+            ).take(max_m).collect::<Vec<ZpElement>>();
+        let yp_r = std::iter::successors(
+                Some(ZpElement::from(1 as u64)),
+                |&x| Some(x * yp)
+           ).take(max_n).collect::<Vec<ZpElement>>();
+        
+        let a_yp = mat_a_zp.bra_zp(&yp_l);
+        let b_yp = mat_b_zp.bra_zp(&yp_l);
+        let c_yp = mat_c_zp.bra_zp(&yp_l);
+        
+        let a_yyp = dirac::inner_product(&a_y, &yp_r);
+        let b_yyp = dirac::inner_product(&b_y, &yp_r);
+        let c_yyp = dirac::inner_product(&c_y, &yp_r);
+           
+        let a_ypy = dirac::inner_product(&a_yp, &y_r);
+        let b_ypy = dirac::inner_product(&b_yp, &y_r);
+        let c_ypy = dirac::inner_product(&c_yp, &y_r);
+
+        let a_ypyp = dirac::inner_product(&a_yp, &yp_r);
+        let b_ypyp = dirac::inner_product(&b_yp, &yp_r);
+        let c_ypyp = dirac::inner_product(&c_yp, &yp_r);
+
+        let (cyyp_blind, cyyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(c_yyp));
+        let (ayyp_blind, ayyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(a_yyp));
+        let (byyp_blind, byyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(b_yyp));
+        
+        let (cypy_blind, cypy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(c_ypy));
+        let (aypy_blind, aypy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(a_ypy));
+        let (bypy_blind, bypy_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(b_ypy));
+
+        let (cypyp_blind, cypyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(c_ypyp));
+        let (aypyp_blind, aypyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(a_ypyp));
+        let (bypyp_blind, bypyp_tilde) =
+            zk_trans_seq.push_gen_blinding(TranElem::Zp(b_ypyp));
+
+        let z = zk_trans_seq.gen_challenge();
+
+        let c_gt = cyy_blind + z * cypy_blind 
+            +  z.pow(2) * cyyp_blind  + z.pow(3) * cypyp_blind
+            + z.pow(4) * ayy_blind + z.pow(5) * aypy_blind
+            + z.pow(6) * ayyp_blind + z.pow(7) * aypyp_blind
+            + z.pow(8) * byy_blind + z.pow(9) * bypy_blind
+            + z.pow(10) * byyp_blind + z.pow(11) * bypyp_blind;
+
+        let c_gt_tilde = cyy_tilde + z * cypy_tilde 
+        +  z.pow(2) * cyyp_tilde  + z.pow(3) * cypyp_tilde
+        + z.pow(4) * ayy_tilde + z.pow(5) * aypy_tilde
+        + z.pow(6) * ayyp_tilde + z.pow(7) * aypyp_tilde
+        + z.pow(8) * byy_tilde + z.pow(9) * bypy_tilde
+        + z.pow(10) * byyp_tilde + z.pow(11) * bypyp_tilde;
+
+        let c_abc = self.c_blind 
+            + self.a_blind * z.pow(4) + self.b_blind * z.pow(8);
+        let c_abc_tilde = c_tilde 
+            + a_tilde * z.pow(4) + b_tilde * z.pow(8);
+
+        
+        let cache_abc = dirac::vec_addition(
+            &cache_c,
+            &dirac::vec_addition(
+                &vec_scalar_mul(&cache_a, z.pow(4)),
+                &vec_scalar_mul(&cache_b, z.pow(8)),
+            )
         );
 
-        let ip2 = ZkLeftProjPoly::new(
-            ay_blind, 
-            self.a_blind,
-            (m,l), 
+
+        let ip1 = ZkProjPoly::new(
+            c_gt, 
+            c_abc,
+            (max_m,max_n), 
             y,
-            n,
+            yp,
+            z, 
+            srs.q,
         );
 
-        let ip3 = ZkRightProjPoly::new(
-            by_blind, 
-            self.b_blind,
-            (l, n), 
-            y,
-            1,
+        let ip2 = ZkSipG2::new(
+            ayyp_blind, 
+            ay_blind,
+            l, 
+            yp,
+        );
+
+        let ip3 = ZkSipG1::new(
+            bypy_blind, 
+            byr_blind,
+            l, 
+            yp,
         );
 
         let ip4 = ZkIpGt::new(
-            d_blind + ay_blind + by_blind,
+            cyy_blind, 
+            ay_blind,  
+            byr_blind,
             l, 
         );
 
+        let mut pip = Pip::new();
 
-        ip2.prove::<U>(
-            srs, zk_trans_seq, 
-            &mat_a, cache_a,
-            ay_tilde, a_tilde,
+
+        ip1.prove::<ZpElement>(
+            srs, zk_trans_seq,
+            (&vec![mat_c_zp, mat_a_zp, mat_b_zp], z.pow(4)), 
+            &cache_abc,
+            c_gt_tilde,
+            c_abc_tilde,
+            &mut pip, 
         );
 
-        std::mem::drop(mat_a);
-
-        ip3.prove::<V>(
-            srs, zk_trans_seq, 
-            &mat_b, cache_b, 
-            by_tilde, b_tilde
+        ip2.prove::<ZpElement>(
+            srs, zk_trans_seq,
+            &a_y,
+            ayyp_tilde,
+            ay_tilde,
+            &mut pip,
         );
 
-        std::mem::drop(mat_b);
-
-        ip1.prove_cm::<T>(
-            srs, zk_trans_seq, 
-            &mat_c, cache_c, 
-            d_tilde, c_tilde,
+        ip3.prove::<ZpElement>(
+            srs, zk_trans_seq,
+            &b_yr,
+            bypy_tilde,
+            byr_tilde,
+            &mut pip,
         );
-
-        std::mem::drop(mat_c);
-
 
         ip4.prove::<ZpElement>(
-            srs, zk_trans_seq,
-            &a_y, &b_y,
-            d_tilde + ay_tilde + by_tilde,
+            srs, zk_trans_seq, 
+            &a_y, 
+            &b_yr,
+            cyy_tilde, 
+            ay_tilde, 
+            byr_tilde,
+            &mut pip,
         );
+
+        pip.prove(srs, zk_trans_seq);
+
      
     }
 
@@ -226,16 +342,6 @@ impl ZkMatMul {
             return false;
         } 
 
-        let y: ZpElement;
-        
-        if let TranElem::Coin(y_read) = 
-            trans_seq.data[pointer_old + 6] 
-        {
-            y = y_read;
-        } else {
-            println!("!! Invalid transcript when verifying MatMul");
-            return false;
-        }
 
         let m = self.m;
         let n = self.n;
@@ -244,71 +350,111 @@ impl ZkMatMul {
             panic!("Invalid shape when verifying MatMul");
         }
 
-        let d_blind: GtElement;
-        let a_y_blind: GtElement;
-        let b_y_blind: GtElement;
+        let max_m = std::cmp::max(m, l);
+        let max_n = std::cmp::max(n, l);
 
         if let (
-            TranElem::Gt(d_blind_read),
-            TranElem::Gt(a_y_blind_read),
-            TranElem::Gt(b_y_blind_read),
+            TranElem::Coin(y),
+            TranElem::Gt(ay_blind),
+            TranElem::Gt(byr_blind),
+            TranElem::Gt(cyy_blind),
+            TranElem::Gt(ayy_blind),
+            TranElem::Gt(byy_blind),
+            TranElem::Coin(yp),
+            TranElem::Gt(cyyp_blind),
+            TranElem::Gt(ayyp_blind),
+            TranElem::Gt(byyp_blind),
+            TranElem::Gt(cypy_blind),
+            TranElem::Gt(aypy_blind),
+            TranElem::Gt(bypy_blind),
+            TranElem::Gt(cypyp_blind),
+            TranElem::Gt(aypyp_blind),
+            TranElem::Gt(bypyp_blind),
+            TranElem::Coin(z),
         ) = (
+            trans_seq.data[pointer_old + 6],
             trans_seq.data[pointer_old + 7],
             trans_seq.data[pointer_old + 8],
-            trans_seq.data[pointer_old + 9], 
+            trans_seq.data[pointer_old + 9],
+            trans_seq.data[pointer_old + 10],
+            trans_seq.data[pointer_old + 11],
+            trans_seq.data[pointer_old + 12], 
+            trans_seq.data[pointer_old + 13],
+            trans_seq.data[pointer_old + 14],
+            trans_seq.data[pointer_old + 15],
+            trans_seq.data[pointer_old + 16],
+            trans_seq.data[pointer_old + 17],
+            trans_seq.data[pointer_old + 18],
+            trans_seq.data[pointer_old + 19],
+            trans_seq.data[pointer_old + 20],
+            trans_seq.data[pointer_old + 21],
+            trans_seq.data[pointer_old + 22],
         ) {
-            d_blind = d_blind_read;
-            a_y_blind = a_y_blind_read;
-            b_y_blind = b_y_blind_read;
+            trans_seq.pointer = pointer_old + 23;
+
+            let c_gt = cyy_blind + z * cypy_blind 
+            +  z.pow(2) * cyyp_blind  + z.pow(3) * cypyp_blind
+            + z.pow(4) * ayy_blind + z.pow(5) * aypy_blind
+            + z.pow(6) * ayyp_blind + z.pow(7) * aypyp_blind
+            + z.pow(8) * byy_blind + z.pow(9) * bypy_blind
+            + z.pow(10) * byyp_blind + z.pow(11) * bypyp_blind;
+
+            let c_abc = self.c_blind 
+                + self.a_blind * z.pow(4) + self.b_blind * z.pow(8);
+
+            
+            let ip1 = ZkProjPoly::new(
+                c_gt, 
+                c_abc,
+                (max_m,max_n), 
+                y,
+                yp,
+                z, 
+                srs.q,
+            );
+
+            let ip2 = ZkSipG2::new(
+                ayyp_blind, 
+                ay_blind,
+                l, 
+                yp,
+            );
+
+            let ip3 = ZkSipG1::new(
+                bypy_blind, 
+                byr_blind,
+                l, 
+                yp,
+            );
+
+            let ip4 = ZkIpGt::new(
+                cyy_blind, 
+                ay_blind,  
+                byr_blind,
+                l, 
+            );
+
+            let mut pip = Pip::new();
+
+            let check1 = ip1.verify_as_subprotocol(srs, trans_seq, &mut pip);
+            // println!(" * IP1 check: {}", check1);
+            let check2 = ip2.verify_as_subprotocol(srs, trans_seq, &mut pip);
+            // println!(" * IP2 check: {}", check2);
+            let check3 = ip3.verify_as_subprotocol(srs, trans_seq, &mut pip);
+            // println!(" * IP3 check: {}", check3);
+            let check4 = ip4.verify_as_subprotocol(srs, trans_seq, &mut pip);
+            // println!(" * IP4 check: {}", check4);
+
+            let check5 = pip.verify(srs, trans_seq);
+            // println!(" * Pip check: {}", check5);
+
+            return check1 && check2 && check3 && check4 && check5;
+
         } else {
             println!("!! Invalid Transcript type when verifying MatMul");
             return false;
         } 
 
-
-        trans_seq.pointer = pointer_old + 10 ;
-
-        let ip1 = ZkScalarProjPoly::new(
-            d_blind, 
-            self.c_blind,
-            (m,n), 
-            y,
-        );
-
-        let ip2 = ZkLeftProjPoly::new(
-            a_y_blind, 
-            self.a_blind,
-            (m,l), 
-            y,
-            n,
-        );
-
-        let ip3 = ZkRightProjPoly::new(
-            b_y_blind, 
-            self.b_blind,
-            (l, n), 
-            y,
-            1,
-        );
-
-
-
-        let ip4 = ZkIpGt::new(
-            d_blind + a_y_blind + b_y_blind,
-            l, 
-        );
-
-        let check2 = ip2.verify_as_subprotocol(srs, trans_seq);
-        let check3 = ip3.verify_as_subprotocol(srs, trans_seq);
-        let check1 = ip1.verify_as_subprotocol_cm(srs, trans_seq);
-        let check4 = ip4.verify_as_subprotocol(srs, trans_seq);
-
-        // println!("Check of Ip1 in MatMul: {:?}", check1);
-        // println!("Check of Ip2 in MatMul: {:?}", check2);
-        // println!("Check of Ip3 in MatMul: {:?}", check3);
-        // println!("Check of Ip4 in MatMul: {:?}", check4);
-
-        return  check1 && check2 && check3 && check4;
         
     }
 
@@ -336,7 +482,7 @@ mod tests {
     use crate::utils::test_data;
    
     #[test]
-    fn test_zk_matmul() {
+    fn test_matmul() {
 
         let srs = SRS::new(64);
 
@@ -348,8 +494,8 @@ mod tests {
                 &srs.g_hat_vec, &srs.h_hat_vec
             );
 
-        let (a_com, a_cache_rm) = 
-            a.commit_row_major(
+        let (a_com, a_cache_cm) = 
+            a.commit_col_major(
                 &srs.g_hat_vec, &srs.h_hat_vec
             );
         
@@ -380,7 +526,7 @@ mod tests {
             &srs,
             &mut zk_trans_seq,
             c, a, b,
-            &c_cache_cm, &a_cache_rm, &b_cache_cm, 
+            &c_cache_cm, &a_cache_cm, &b_cache_cm, 
             c_tilde, a_tilde, b_tilde,
         );
 

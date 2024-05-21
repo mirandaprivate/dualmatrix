@@ -17,22 +17,30 @@ use crate::utils::curve::{
 use crate::utils::dirac;
 use crate::utils::fiat_shamir::{TranElem, TranSeq};
 
-use crate::zkprotocols::pip::{PipG1, PipG2};
+use crate::zkprotocols::pip::Pip;
 
 use crate::zkprotocols::zk_trans::ZkTranSeqProver;
 use crate::zkprotocols::zk_scalars::{ZkSchnorr, ZkMulScalar, ZkSemiMulScalar};
 
 
 pub struct ZkIpGt {
-    pub gt_com: GtElement,
+    pub c_com: GtElement,
+    pub a_com: GtElement,
+    pub b_com: GtElement,
     pub length: usize,
 }
 
 impl ZkIpGt {
-    pub fn new(gt_com_value: GtElement, length_value: usize
+    pub fn new(
+        c_com_value: GtElement,
+        a_com_value: GtElement,
+        b_com_value: GtElement, 
+        length_value: usize
     ) -> Self {
         Self {
-            gt_com: gt_com_value,
+            c_com: c_com_value,
+            a_com: a_com_value,
+            b_com: b_com_value,
             length: length_value,
         }
     }
@@ -43,14 +51,26 @@ impl ZkIpGt {
         vec_a: &Vec<T>, 
         vec_b: &Vec<T>,
         tilde_c: ZpElement,
+        tilde_a: ZpElement,
+        tilde_b: ZpElement,
+        pip: &mut Pip,
     ) where T: 'static + ConvertToZp {
 
         zk_trans_seq.push_without_blinding(
-            TranElem::Gt(self.gt_com),
+            TranElem::Gt(self.c_com),
+        );
+        zk_trans_seq.push_without_blinding(
+            TranElem::Gt(self.a_com),
+        );
+        zk_trans_seq.push_without_blinding(
+            TranElem::Gt(self.b_com),
         );
         zk_trans_seq.push_without_blinding(
             TranElem::Size(self.length),
         );
+
+        let x = zk_trans_seq.gen_challenge();
+        let x_inv = x.inv();
 
         if (self.length & (self.length - 1)) != 0 {
             panic!("Length is not a power of 2 when proving IpGt");
@@ -96,12 +116,12 @@ impl ZkIpGt {
                 h_vec_current[current_len/2..current_len].to_vec();
 
             let l_tr = 
-                g_0 * dirac::inner_product(&vec_a_left, &h_right)
-                + h_0 * dirac::inner_product(&vec_b_right, &g_left)
+                x * g_0 * dirac::inner_product(&vec_a_left, &h_right)
+                + x_inv * h_0 * dirac::inner_product(&vec_b_right, &g_left)
                 + u_0 * dirac::inner_product(&vec_a_left, &vec_b_right);
             let r_tr = 
-                g_0 * dirac::inner_product(&vec_a_right, &h_left)
-                + h_0 * dirac::inner_product(&vec_b_left, &g_right)
+                x * g_0 * dirac::inner_product(&vec_a_right, &h_left)
+                + x_inv * h_0 * dirac::inner_product(&vec_b_left, &g_right)
                 + u_0 * dirac::inner_product(&vec_a_right, &vec_b_left);
 
             zk_trans_seq.push_gen_blinding(TranElem::Gt(l_tr));
@@ -155,14 +175,11 @@ impl ZkIpGt {
         zk_trans_seq.push_without_blinding(TranElem::G1(g_reduce));
         zk_trans_seq.push_without_blinding(TranElem::G2(h_reduce));
 
+        pip.challenges_g_vec.push(challenges_inv.clone());
+        pip.challenges_h_vec.push(challenges.clone());
+        pip.v_g_vec.push(g_reduce);
+        pip.v_h_vec.push(h_reduce);
 
-        let pip_g1 = PipG1::new(
-            g_reduce, &challenges_inv
-        );
-
-        let pip_g2 = PipG2::new(
-            h_reduce, &challenges
-        );
 
 
         // ///////////////////////////////////////////////////////////
@@ -177,12 +194,12 @@ impl ZkIpGt {
 
         let length = zk_trans_seq.blind_seq.len();
         
-        let rhs_tilde = a_b_tilde + a_h_tilde + b_g_tilde; 
+        let rhs_tilde = a_b_tilde + x * a_h_tilde + x_inv * b_g_tilde; 
            
        
 
         let mut current_index = length - 5 - 2 * log_n;
-        let mut lhs_tilde = tilde_c;
+        let mut lhs_tilde = tilde_c + x * tilde_a + x_inv * tilde_b;
         for j in 0..log_n {
             let l_tilde = zk_trans_seq.blind_seq[current_index];
             let r_tilde = zk_trans_seq.blind_seq[current_index+1];
@@ -215,8 +232,6 @@ impl ZkIpGt {
             b_reduce_blind,
         );
 
-        pip_g1.prove(srs, zk_trans_seq.get_mut_trans_seq());
-        pip_g2.prove(srs, zk_trans_seq.get_mut_trans_seq());
 
         let zk_schnorr = ZkSchnorr::new(
             eq_tilde_com,
@@ -254,31 +269,47 @@ impl ZkIpGt {
     }
 
     pub fn verify_as_subprotocol(
-        &self, srs: &SRS, trans_seq: &mut TranSeq
+        &self, srs: &SRS, trans_seq: &mut TranSeq, pip: &mut Pip,
     ) -> bool {
 
         let pointer_old = trans_seq.pointer;
         
         if (
-            TranElem::Gt(self.gt_com),
+            TranElem::Gt(self.c_com),
+            TranElem::Gt(self.a_com),
+            TranElem::Gt(self.b_com),
             TranElem::Size(self.length),
         ) != (
             trans_seq.data[pointer_old],
             trans_seq.data[pointer_old + 1],
+            trans_seq.data[pointer_old + 2],
+            trans_seq.data[pointer_old + 3],
         ) {
-            println!("{:?}", self.gt_com);
+            println!("{:?}", self.c_com);
             println!("{:?}", trans_seq.data[pointer_old]);
             println!("!! Invalid public input when verifying IpGt");
             return false;
         } 
 
+        let x: ZpElement;
+        let x_inv: ZpElement;
+        if let TranElem::Coin(x_value) 
+            = trans_seq.data[pointer_old + 4] {
+                x = x_value;
+                x_inv = x.inv();
+            }
+        else {
+            return false;
+        }
+
         let n = self.length;
         let log_n = (n as u64).ilog2() as usize;
 
-        trans_seq.pointer = pointer_old + 3 * log_n + 9;
+        trans_seq.pointer = pointer_old + 3 * log_n + 12;
 
-        let mut current_pointer = pointer_old + 2;
-        let mut lhs: GtElement = self.gt_com.clone();
+        let mut current_pointer = pointer_old + 5;
+        let mut lhs: GtElement 
+            = self.c_com.clone() + x * self.a_com.clone() + x_inv * self.b_com.clone();
         
         let mut challenges: Vec<ZpElement> = Vec::new();
         let mut challenges_inv: Vec<ZpElement> = Vec::new();
@@ -326,25 +357,22 @@ impl ZkIpGt {
             trans_seq.data[current_pointer+6],
         ) {
             let rhs = 
-                a_h_blind + b_g_blind + a_b_blind;
+                x * a_h_blind + x_inv * b_g_blind + a_b_blind;
             
             let eq_com = lhs - rhs;
-                
-            let pip_g1 = PipG1::new(
-                g_reduce, &challenges_inv
-            );
-    
-            let pip_g2 = PipG2::new(
-                h_reduce, &challenges
-            );
-
-            let check1 = pip_g1.verify_as_subprotocol(srs, trans_seq);
-            let check2 = pip_g2.verify_as_subprotocol(srs, trans_seq);
+            
+            pip.challenges_g_vec.push(challenges_inv.clone());
+            pip.challenges_h_vec.push(challenges.clone());
+            pip.v_g_vec.push(g_reduce);
+            pip.v_h_vec.push(h_reduce);
+            
 
             // ///////////////////////////////////////////////////////////
             // Add zk from now on
             // /////////////////////////////////////////////////////////////
             let blind_base = srs.blind_base;
+
+            trans_seq.pointer = current_pointer + 7;
 
             let zk_semi_mul_1 = ZkSemiMulScalar::new(
                 a_h_blind,
@@ -369,24 +397,24 @@ impl ZkIpGt {
                 blind_base,
             );
     
-            let check3 = zk_semi_mul_1.verify_as_subprotocol::<G2Element, ZpElement>(
+            let check1 = zk_semi_mul_1.verify_as_subprotocol::<G2Element, ZpElement>(
                 srs,
                 trans_seq,
             );
     
-            let check4 = zk_semi_mul_2.verify_as_subprotocol::<G1Element, ZpElement>(
+            let check2 = zk_semi_mul_2.verify_as_subprotocol::<G1Element, ZpElement>(
                 srs,
                 trans_seq,
             );
     
-            let check5 = zk_mul_scalar.verify_as_subprotocol::<ZpElement, ZpElement, ZpElement>(
+            let check3 = zk_mul_scalar.verify_as_subprotocol::<ZpElement, ZpElement, ZpElement>(
                 srs, 
                 trans_seq,
             );
     
-            let check6 = zk_schnorr.verify_as_subprotocol(trans_seq);
+            let check4 = zk_schnorr.verify_as_subprotocol(trans_seq);
 
-            return check1 && check2 && check3 && check4 && check5 && check6;
+            return check1 && check2 && check3 && check4;
 
         } else {
             println!("!! Invalid transcript when verifying IpGt");
@@ -395,7 +423,7 @@ impl ZkIpGt {
         
     }
 
-    pub fn verify(&self, srs: &SRS, trans_seq: &mut TranSeq
+    pub fn verify(&self, srs: &SRS, trans_seq: &mut TranSeq, pip: &mut Pip
     ) -> bool {
 
         if trans_seq.check_fiat_shamir() == false {
@@ -403,7 +431,7 @@ impl ZkIpGt {
             return false;
         }
 
-        self.verify_as_subprotocol(srs, trans_seq)
+        return self.verify_as_subprotocol(srs, trans_seq, pip);
     }
 
 }
@@ -416,7 +444,7 @@ mod tests {
     use rand::Rng;
 
     #[test]
-    fn test_zk_ipgt() {
+    fn test_ipgt() {
 
         let srs = SRS::new(64);
 
@@ -443,16 +471,20 @@ mod tests {
         let blind_base = srs.blind_base;
 
         let c_tilde = ZpElement::rand();
+        let a_tilde = ZpElement::rand();
+        let b_tilde = ZpElement::rand();
 
-        let gt_com = 
-            c * srs.g_hat * srs.h_hat + a_com + b_com
-            + c_tilde * blind_base;
+        let c_com = 
+            c * srs.g_hat * srs.h_hat  + c_tilde * blind_base;
+        let a_com = a_com + a_tilde * blind_base;
+        let b_com = b_com + b_tilde * blind_base;
 
         let gt_ip = ZkIpGt::new(
-            gt_com, n
+            c_com, a_com, b_com, n
         );
 
         let mut trans_seq_prover = ZkTranSeqProver::new(&srs);
+        let mut pip = Pip::new();   
 
         gt_ip.prove::<i64>(
             &srs, 
@@ -460,16 +492,25 @@ mod tests {
             &a_vec, 
             &b_vec,
             c_tilde,
+            a_tilde,
+            b_tilde,
+            &mut pip,
         );
 
-        let mut trans_seq = trans_seq_prover.publish_trans();
+        pip.prove(&srs, &mut trans_seq_prover);
 
-        println!(" * Proof of ZkIpGt generated {:?}", trans_seq.data.len());
+        let mut trans = trans_seq_prover.publish_trans();
 
-        let result = gt_ip.verify(&srs, &mut trans_seq);
+        let mut pip_v = Pip::new();
+        let result = gt_ip.verify(&srs, &mut trans, &mut pip_v);
+
+        let pip_result = pip_v.verify(&srs, &mut trans);
+
+        assert_eq!(trans.data.len(), trans.pointer);
 
         assert_eq!(result, true);
-        assert_eq!(trans_seq.data.len(), trans_seq.pointer);
+        println!("Pip result {}", pip_result);
+
 
         println!(" * Verification of ZkIpGt passed");
 

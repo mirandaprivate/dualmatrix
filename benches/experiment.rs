@@ -20,11 +20,10 @@ use dualmatrix::mat::Mat;
 use dualmatrix::setup::SRS;
 
 use dualmatrix::utils::curve::ZpElement;
-use dualmatrix::utils::curve::{G1Element, G2Element, GtElement};
+use dualmatrix::utils::curve::GtElement;
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
 
-use dualmatrix::protocols::mat_mul::MatMul;
 
 use dualmatrix::zkprotocols::zk_matmul::ZkMatMul;
 
@@ -56,7 +55,7 @@ fn experiment(log_file: &mut File) {
         let log_dim = 2*t;
         let sqrt_dim = 2usize.pow(t as u32);
         let matrix_dim = 2usize.pow(log_dim as u32);
-        let q: usize = 2usize.pow(log_dim as u32) + 2;
+        let q: usize = 2usize.pow(log_dim as u32/2);
 
         println!(" ** Experiment for dualMatrix, Matrix Dim 2e{:?} times 2e{:?}; Number of non-zero elements: 2e{:?} ** ",
             log_dim,
@@ -87,7 +86,7 @@ fn experiment(log_file: &mut File) {
 
         let a_tilde = ZpElement::rand();
         let (a_com, a_cache) = 
-            a.commit_rm(&srs);
+            a.commit_cm(&srs);
         let a_blind = a_com + a_tilde * srs.blind_base;
 
         // let commit_a_duration = commit_a_timer.elapsed();
@@ -194,7 +193,7 @@ fn experiment_dense(log_file: &mut File) {
 
     let srs_timer = Instant::now();
 
-    let srs = SRS::new(2usize.pow(LOG_DIM as u32/2) + 2);
+    let srs = SRS::new(2usize.pow(LOG_DIM as u32/2));
 
     let srs_duration = srs_timer.elapsed();
 
@@ -219,7 +218,7 @@ fn experiment_dense(log_file: &mut File) {
 
     let a_tilde = ZpElement::rand();
     let (a_com, a_cache) = 
-        a.commit_rm(&srs);
+        a.commit_cm(&srs);
     let a_blind = a_com + a_tilde * srs.blind_base;
 
     // let commit_a_duration = commit_a_timer.elapsed();
@@ -308,8 +307,8 @@ fn experiment_dense(log_file: &mut File) {
 
     println!(" * Verification of zkMatMul result: {:?}", result);
 
-    println!(" ** Verifier time of zkMatMul : {:?}", verify_time);
-    writeln!(log_file, " ** Verifier time of zkMatMul : {:?}", 
+    println!(" ** Verifier time of zkMatMul : {:?}ms", verify_time);
+    writeln!(log_file, " ** Verifier time of zkMatMul : {:?}ms", 
         timer_verify.elapsed())
     .unwrap();
 
@@ -408,86 +407,4 @@ fn experiment_commit_matrices(log_file: &mut File){
 
 
 }
-
-
-fn experiment_matmul(log_file: &mut File) {
-
-    let srs = SRS::from_file(
-        format!("srs_2e{:?}.srs", LOG_DIM), 
-        true,
-    ).unwrap();
-
-    let a_read: Mat<i64> = Mat::<i64>::from_file(
-        format!("a_sprs_i64_2e{:?}.dat", LOG_DIM), false
-        ).unwrap();
-
-    let b_read: Mat<i64> = Mat::<i64>::from_file(
-        format!("b_sprs_i64_2e{:?}.dat", LOG_DIM), false
-        ).unwrap();
-    
-    
-    let c_read: Mat<i128> = Mat::<i128>::from_file(
-        format!("c_sprs_i128_2e{:?}.dat", LOG_DIM), false
-        ).unwrap();
-
-    let a_cache_read: Vec<G2Element> = FileIO::from_file(
-        format!("{}_rp.cache", a_read.id), false
-        ).unwrap();
-
-    let b_cache_read: Vec<G1Element> = FileIO::from_file(
-        format!("{}_lp.cache", b_read.id), false
-        ).unwrap();
-    
-    let c_cache_read: Vec<G1Element> = FileIO::from_file(
-        format!("{}_lp.cache", c_read.id), false
-        ).unwrap();
-
-    let commit_cab: Vec<GtElement> = FileIO::from_file(
-        format!("commit_cab_sprs_2e{:?}.com", LOG_DIM), 
-        true
-        ).unwrap();
-
-    let timer_prove = Instant::now();
-    
-    let matmul_protocol = MatMul::new(
-        commit_cab[0],
-        commit_cab[1],
-        commit_cab[2], 
-        SQRT_MATRIX_DIM * SQRT_MATRIX_DIM,
-        SQRT_MATRIX_DIM * SQRT_MATRIX_DIM,
-        SQRT_MATRIX_DIM * SQRT_MATRIX_DIM,
-    );
-    
-    let mut trans = TranSeq::new();
-
-    matmul_protocol.prove::<i128, i64, i64>(
-        &srs,
-        &mut trans,
-        c_read, a_read, b_read,
-        &c_cache_read, &a_cache_read, &b_cache_read, 
-    );
-
-
-    println!(" ** Prover time of MatMul: {:?}", timer_prove.elapsed());
-    writeln!(log_file, " ** Prover time of MatMul: {:?}", timer_prove.elapsed()).unwrap();
-
-    trans.save_to_file(
-        format!("tr_2e{:?}", LOG_DIM)
-    ).unwrap();
-
-    let mut trans_read = TranSeq::read_from_file(
-        format!("tr_2e{:?}", LOG_DIM)
-    );
-
-    let timer_verify = Instant::now();
-
-    let result = matmul_protocol.verify(&srs, &mut trans_read);
-
-    println!(" * Verification of MatMul result: {:?}", result);
-
-    println!(" ** Verifier time of MatMul : {:?}", timer_verify.elapsed());
-    writeln!(log_file, " ** Verifier time of MatMul : {:?}", timer_verify.elapsed()).unwrap();
-
-}
-
 

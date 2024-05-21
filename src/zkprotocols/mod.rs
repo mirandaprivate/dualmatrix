@@ -13,7 +13,6 @@ pub mod zk_scalars;
 
 pub mod pip;
 pub mod zk_ip_gt;
-pub mod zk_scalar_proj;
-pub mod zk_left_proj;
-pub mod zk_right_proj;
+pub mod zk_sip;
+pub mod zk_proj;
 pub mod zk_matmul;

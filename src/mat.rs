@@ -2,11 +2,20 @@
 //! 
 //! The witness matrices are represented as sparse matrices.
 //!  
-use core::convert::From;
 
+use core::convert::From;
+use std::sync::Arc;
+
+use rayon::{ThreadPoolBuilder, prelude::*};
 use serde::{Serialize, Deserialize};
 
 use crate::utils::to_file::FileIO;
+
+use crate::utils::curve::{
+    Zero, ZpElement, ConvertToZp,
+};
+
+use crate::config::NUM_THREADS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mat<T> 
@@ -15,6 +24,7 @@ pub struct Mat<T>
     pub shape: (usize, usize),
     pub data: Vec<(usize, usize, T)>,
 }
+
 
 impl<T> Mat<T> {
     pub fn new(
@@ -37,6 +47,41 @@ impl<T> Mat<T> {
     pub fn push(&mut self, row: usize, col: usize, val: T) {
         self.data.push((row, col, val));
     }    
+}
+
+pub trait ToZpMat {
+    fn to_zp_mat(&self) -> Mat<ZpElement>;
+}
+
+impl<T: ConvertToZp> ToZpMat for Mat<T> {
+    fn to_zp_mat(&self) -> Mat<ZpElement> {
+        let pool = ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build()
+        .unwrap();
+
+        let shape = self.shape;
+        let id = self.id.clone() + "zp";
+        let data_len = self.data.len();
+
+        // Initialize a vector for the converted data
+        let mut converted_data = 
+            vec![(0, 0, ZpElement::zero()); data_len];
+        let arc_data = Arc::new(self.data.clone());
+
+        pool.install(|| {
+            converted_data.par_iter_mut().enumerate().for_each(
+                |(idx, elem)| {
+                let (i, j, val) = &arc_data[idx];
+                *elem = (*i, *j, val.to_zp());
+            });
+        });
+
+        let mut mat = Mat::new(&id, shape);
+        mat.data = converted_data;
+        
+        mat
+    }
 }
 
 impl<T: Serialize + for<'de> Deserialize<'de> > FileIO for Mat<T> {}

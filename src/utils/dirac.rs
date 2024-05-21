@@ -182,9 +182,18 @@ where
 
 pub fn vec_addition<T> (vec_a: &Vec<T>, vec_b: &Vec<T>) -> Vec<T>
 where
-    T: 'static + Clone + Copy + Send + Sync + Add<Output = T>, 
+    T: 'static + Clone + Copy + Send + Sync + Add<Output = T> + Zero, 
 {
+    let len = std::cmp::max(vec_a.len(), vec_b.len());
 
+    let vec_a_prime: Vec<T> =  vec_a.iter().cloned()
+    .chain(std::iter::repeat(T::zero()))
+    .take(len).collect();
+    let vec_b_prime: Vec<T> =  vec_b.iter().cloned()
+    .chain(std::iter::repeat(T::zero()))
+    .take(len).collect();
+
+    
     let pool = ThreadPoolBuilder::new()
         .num_threads(NUM_THREADS)
         .build()
@@ -192,8 +201,8 @@ where
 
     let result = pool.install(|| 
         {
-            vec_a.par_iter()
-            .zip(vec_b.par_iter())
+            vec_a_prime.par_iter()
+            .zip(vec_b_prime.par_iter())
             .map(|(&a, &b)| a + b)
             .collect()
         }
@@ -240,7 +249,8 @@ where
     let result = Arc::new(
         Mutex::new(vec![V::zero(); n_col]));
 
-    let chunks: Vec<_> = a_data.chunks(a_data.len() / NUM_THREADS)
+    let chunks: Vec<_> = a_data.chunks(
+        std::cmp::max(a_data.len() / NUM_THREADS, 1))
         .collect();
 
     let mut handles = Vec::new();
@@ -313,7 +323,8 @@ where
 
     let result = Arc::new(Mutex::new(vec![V::zero(); n_row]));
 
-    let chunks: Vec<_> = a_data.chunks(a_data.len() / NUM_THREADS)
+    let chunks: Vec<_> = a_data.chunks(
+        std::cmp::max(a_data.len() / NUM_THREADS, 1))
         .collect();
 
     let mut handles = Vec::new();

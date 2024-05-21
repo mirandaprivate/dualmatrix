@@ -86,6 +86,8 @@ impl ZkSchnorr {
             trans_seq.data[pointer_old],
             trans_seq.data[pointer_old + 1],
         ) {
+            // println!("schnorr {:?}", trans_seq.data[pointer_old]);
+            // println!("schnorr {:?}", trans_seq.data[pointer_old + 1]);
             println!("!! Invalid public input when verifying ZkSchnorr");
             return false;
         } 
@@ -100,6 +102,8 @@ impl ZkSchnorr {
             trans_seq.data[pointer_old + 3],
             trans_seq.data[pointer_old + 4],
         ) {
+
+            trans_seq.pointer = pointer_old + 5;
 
            if r_com + challenge * self.commit == self.base * z {
                return true;
@@ -314,8 +318,6 @@ impl ZkMulScalar
 
         let pointer_old = trans_seq.pointer;
 
-        trans_seq.pointer = pointer_old + 13;
-
         if (
             TranElem::Gt(self.c_com),
             TranElem::Gt(self.a_com),
@@ -356,6 +358,8 @@ impl ZkMulScalar
             let b_blind: V = V::from_tran_elem(
                 trans_seq.data[pointer_old + 12]
             );
+
+            trans_seq.pointer = pointer_old + 13;
 
             let blind_base = srs.blind_base;
             let p_a = 
@@ -473,7 +477,6 @@ where
 
         let pointer_old = trans_seq.pointer;
 
-        trans_seq.pointer = pointer_old + 9;
 
         if (
             TranElem::Gt(self.c_com),
@@ -506,6 +509,8 @@ where
             let a_blind: U = U::from_tran_elem(
                 trans_seq.data[pointer_old + 8]
             );
+
+            trans_seq.pointer = pointer_old + 9;
         
             let blind_base = srs.blind_base;
             let p_a = 

@@ -10,3 +10,35 @@
  ** Matrix generation time: 1.280678916s
  ** SRS generation time: 1.769653437s
  ** Matrix generation time: 1.470281784s
+ ** SRS generation time: 1.735533186s
+ ** Matrix generation time: 1.798676346s
+ ** Prover time of zkMatMul: 15.621031402s
+ ** SRS generation time: 1.732417668s
+ ** Matrix generation time: 1.368439093s
+ ** Prover time of zkMatMul: 15.758511066s
+ ** Verifier time of zkMatMul : 5.277457409s
+ ** SRS generation time: 1.74783052s
+ ** Matrix generation time: 1.465878493s
+ ** Prover time of zkMatMul: 15.538657555s
+ ** Verifier time of zkMatMul : 5.211338807s
+ ** SRS generation time: 1.720767912s
+ ** Matrix generation time: 1.454960605s
+ ** Prover time of zkMatMul: 15.740594521s
+ ** SRS generation time: 1.74112333s
+ ** Matrix generation time: 1.42060485s
+ ** Prover time of zkMatMul: 15.522274816s
+ ** SRS generation time: 1.849263299s
+ ** Matrix generation time: 1.961080519s
+ ** Prover time of zkMatMul: 17.554822894s
+ ** Verifier time of zkMatMul : 8.913376063s
+ ** SRS generation time: 1.71417358s
+ ** Matrix generation time: 1.485227363s
+ ** Prover time of zkMatMul: 15.642037501s
+ ** Verifier time of zkMatMul : 8.616130127sms
+ ** SRS generation time: 1.729574828s
+ ** Matrix generation time: 1.390163039s
+ ** Prover time of zkMatMul: 17.058609895s
+ ** SRS generation time: 1.862872149s
+ ** Matrix generation time: 1.886294566s
+ ** Prover time of zkMatMul: 18.18374185s
+ ** Verifier time of zkMatMul : 5.421422923sms

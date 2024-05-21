@@ -38,13 +38,15 @@ pub fn reduce_from_challenges<T>(
         + Mul<ZpElement, Output =T> + Add + Zero,
 {    
 
-    let xi = xi_from_challenges(challenges);
+    let mut xi = xi_from_challenges(challenges);
+
+    let l = std::cmp::min(xi.len(), vector.len());
 
     if xi.len() > vector.len() {
-        panic!("Vector length is too short when reducing from challenges.");
+        xi = xi[0..l].to_vec();
     }
 
-    let vector_slice = vector[0..xi.len()].to_vec();
+    let vector_slice = vector[0..l].to_vec();
 
     dirac::inner_product(&vector_slice, &xi) 
 }
