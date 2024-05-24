@@ -42,3 +42,16 @@
  ** Matrix generation time: 1.886294566s
  ** Prover time of zkMatMul: 18.18374185s
  ** Verifier time of zkMatMul : 5.421422923sms
+ ** SRS generation time: 57.640131ms
+ ** Matrix generation time: 19.814085ms
+ ** SRS generation time: 86.204971ms
+ ** Matrix generation time: 37.316603ms
+ ** SRS generation time: 66.014587ms
+ ** Matrix generation time: 13.359825ms
+ ** SRS generation time: 87.950643ms
+ ** Matrix generation time: 16.354577ms
+ ** Prover time of zkMatMul: 4.075708226s
+ ** Verifier time of zkMatMul : 350.68273809999994ms
+ ** SRS generation time: 179.558849ms
+ ** Matrix generation time: 15.964014ms
+ ** Prover time of zkMatMul: 6.049842464s

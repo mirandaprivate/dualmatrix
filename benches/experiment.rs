@@ -43,8 +43,8 @@ fn main(){
     // experiment_gen_matrices(&mut log_file);
     // experiment_commit_matrices(&mut log_file);
     // experiment_matmul(&mut log_file);
-    // experiment(&mut log_file);
-    experiment_dense(&mut log_file);
+    experiment(&mut log_file);
+    // experiment_dense(&mut log_file);
 }
 
 
@@ -55,7 +55,7 @@ fn experiment(log_file: &mut File) {
         let log_dim = 2*t;
         let sqrt_dim = 2usize.pow(t as u32);
         let matrix_dim = 2usize.pow(log_dim as u32);
-        let q: usize = 2usize.pow(log_dim as u32/2);
+        let q: usize = 2usize.pow(log_dim as u32);
 
         println!(" ** Experiment for dualMatrix, Matrix Dim 2e{:?} times 2e{:?}; Number of non-zero elements: 2e{:?} ** ",
             log_dim,
@@ -160,7 +160,7 @@ fn experiment(log_file: &mut File) {
 
 
         let mut verify_time: f64 = 0.;
-        let repeat = 10;
+        let repeat = 100;
         
         for _ in 0..repeat {
             let mut trans_read = TranSeq::read_from_file(
@@ -289,7 +289,7 @@ fn experiment_dense(log_file: &mut File) {
     let timer_verify = Instant::now();
 
     let mut verify_time: f64 = 0.;
-    let repeat = 10;
+    let repeat = 100;
         
     for _ in 0..repeat {
         let mut trans_read = TranSeq::read_from_file(
