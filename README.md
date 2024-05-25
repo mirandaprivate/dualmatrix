@@ -1,7 +1,7 @@
 # DualMatrix
 
 This folder contains codes for our paper
-*DualMatrix: Conquering zk-SNARK for Large Matrix Multiplication*.
+*DualMatrix: Scalable zk-SNARKs for Large Sparse Matrix Processing*.
 
 ## Introduction
 
