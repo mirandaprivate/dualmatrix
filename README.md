@@ -120,7 +120,7 @@ $$
 
 The pseudo-code for this subprotocol is as follows:
 
-![alg](assets/scalar_proj.png)
+![alg](assets/proj.png)
 
 --- 
 
