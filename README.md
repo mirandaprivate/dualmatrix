@@ -86,19 +86,17 @@ cargo bench
 ## Directory Contents
 
 - **util/** Utility functions for Fiat-Shamir transformation, matrix projections, and inner products.
-- **protocols/** The MatMul protocol and its sub-protocols.
 - **zkprotocols/** The zero-knowledge MatMul protocol and its sub-protocols.
 
 
 ## Subprotocols
 
-DualMatrix contains four subprotocols:
-- Scalar projection argument
-- Left projection argument
-- Right projection argument
+The matrix-multiplication protocol contains three subprotocols:
+- Matrix-projection argument
+- Public-inner-product argument
 - Inner product argument in $\mathbb{G}_T$
 
-The scalar projection argument, for example, is for the following relation:
+The matrix-projection argument is for the following relation:
 
 $$
 \mathcal{R} = \lbrace
