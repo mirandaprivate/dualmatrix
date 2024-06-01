@@ -21,11 +21,16 @@ use dualmatrix::setup::SRS;
 
 use dualmatrix::utils::curve::ZpElement;
 use dualmatrix::utils::curve::GtElement;
+use dualmatrix::utils::dirac::BraKetZp;
+use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul};
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
+use rand::Rng;
 
 
 use dualmatrix::zkprotocols::zk_matmul::ZkMatMul;
+use dualmatrix::zkprotocols::zk_proj::{ZkProj,ZkProjProtocol};
+use dualmatrix::zkprotocols::pip::Pip;
 
 use dualmatrix::experiment_data;
 use dualmatrix::config::{Q, LOG_DIM, SQRT_MATRIX_DIM};
@@ -43,8 +48,9 @@ fn main(){
     // experiment_gen_matrices(&mut log_file);
     // experiment_commit_matrices(&mut log_file);
     // experiment_matmul(&mut log_file);
-    experiment(&mut log_file);
+    // experiment(&mut log_file);
     // experiment_dense(&mut log_file);
+    experiment_proj(&mut log_file);
 }
 
 
@@ -313,6 +319,214 @@ fn experiment_dense(log_file: &mut File) {
     .unwrap();
 
 }
+
+
+fn experiment_proj(log_file: &mut File) {
+
+    let log_dim = 32 as u32;
+    let sqrt_dim = 2usize.pow(log_dim as u32/2);
+    let count_mat = 18;
+
+     println!(" ** Experiment for proj, 
+        Matrix Dim 2e{:?} times 2e{:?}; 
+        Number of non-zero elements: 2e{:?};
+        Number of matrices: {:?} ** ",
+    log_dim/2,
+    log_dim/2,
+    log_dim,
+    count_mat,
+    );
+
+    let srs_timer = Instant::now();
+
+
+    let srs = SRS::new(sqrt_dim);
+
+    let srs_duration = srs_timer.elapsed();
+
+    println!(" ** SRS generation time: {:?}", srs_duration);
+    writeln!(log_file, " ** SRS generation time: {:?}", srs_duration).unwrap();
+
+    let mat_timer = Instant::now();
+
+    let a_data = (0..sqrt_dim).into_iter()
+        .zip((0..sqrt_dim).into_iter())
+        .map(|(i, j)| 
+            (i, j, rand::thread_rng().gen::<u32>() as i64 )
+        ).collect::<Vec<(usize, usize, i64)>>();
+
+    
+    let a = Mat::new_from_data_vec(
+        "a_test", 
+        (sqrt_dim, sqrt_dim), 
+        a_data
+    );
+
+    let (a_com, a_cache_cm) 
+        = a.commit_col_major(
+            &srs.g_hat_vec, &srs.h_hat_vec
+        );
+    
+
+    let l_vec = (0..sqrt_dim).map(|_| 
+        ZpElement::rand()
+    ).collect::<Vec<ZpElement>>();
+
+    let r_vec = (0..sqrt_dim).map(|_| 
+        ZpElement::rand()
+    ).collect::<Vec<ZpElement>>();
+
+    let c = a.braket_zp(&l_vec, &r_vec);
+
+    let c_com = c * srs.g_hat * srs.h_hat;
+
+    let a_tilde = ZpElement::rand();
+    let c_tilde = ZpElement::rand();
+
+    let c_blind = c_com + c_tilde * srs.blind_base;
+    let a_blind = a_com + a_tilde * srs.blind_base;
+
+    let mat_duration = mat_timer.elapsed();
+
+    println!(" ** Matrix generation time: {:?}", mat_duration);
+    writeln!(log_file, " ** Matrix generation time: {:?}", mat_duration).unwrap();
+
+
+    let proj_timer = Instant::now();
+
+    let _ =a.bra_zp(&l_vec);
+
+    let y = ZpElement::rand();
+
+    let a_com_g = a_cache_cm.clone();
+    let mut a_com_g_cum = a_cache_cm.clone();
+    let mut y_exp = y.clone();
+
+    let timer_marginal = Instant::now();
+    // cumulate 18 matrices
+    for _ in 1..count_mat{
+        a_com_g_cum = vec_addition(
+            &a_com_g_cum, 
+            &vec_scalar_mul(&a_com_g.clone(),y_exp));
+        y_exp = y_exp * y;
+    }
+
+    let mut a_tilde_cum = a_tilde.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        a_tilde_cum = a_tilde_cum + a_tilde * y_exp;
+        y_exp = y_exp * y;
+    }
+
+    let mut c_tilde_cum = c_tilde.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        c_tilde_cum = c_tilde_cum + c_tilde * y_exp;
+        y_exp = y_exp * y;
+    }
+
+    let verifier_marginal = Instant::now();
+
+
+
+    let mut a_com_cum = a_blind.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        a_com_cum = a_com_cum.clone() + a_com * y_exp;
+        y_exp = y_exp * y;
+    }
+
+    let mut c_com_cum = c_blind.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        c_com_cum = c_com_cum.clone() + c_blind * y_exp;
+        y_exp = y_exp * y;
+    }
+
+   
+    let duration_marginal = timer_marginal.elapsed().as_secs_f64();
+    let verifier_marginal = verifier_marginal.elapsed().as_secs_f64();
+    println!(" ** Prover Marginal time: {:?}ms", duration_marginal*1000.);
+    println!(" ** Verifier Marginal time: {:?}ms", verifier_marginal*1000.);
+
+    let proj_protocol = ZkProj::new(
+        c_blind,
+        a_blind, 
+        (sqrt_dim, sqrt_dim), 
+        &l_vec, 
+        &r_vec,
+    );
+
+    let mut pip = Pip::new();
+
+    let mut zk_trans_seq = ZkTranSeqProver::new(&srs);
+
+    let mat_vec = (&vec![a], ZpElement::from(1 as u64));
+
+
+    proj_protocol.prove::<i64>(
+        &srs, 
+        &mut zk_trans_seq, 
+        mat_vec,
+        &a_cache_cm,
+        c_tilde,
+        a_tilde,
+        &mut pip,
+    );
+
+    pip.prove(&srs, &mut zk_trans_seq);
+
+    let proj_duration = proj_timer.elapsed();
+    println!(" ** Proj Prover time: {:?}", proj_duration);
+    writeln!(log_file, " ** Proj Prover time: {:?}", proj_duration).unwrap();
+
+
+    let mut verify_time: f64 = 0.;
+    let repeat = 100;
+        
+    for _ in 0..repeat {
+        let timer_verify = Instant::now();
+        
+        let mut pip_v = Pip::new();
+        let mut trans_seq = zk_trans_seq.publish_trans();
+    
+        let _ = proj_protocol.verify_as_subprotocol(
+            &srs, &mut trans_seq, &mut pip_v
+        );
+    
+        let _ = pip_v.verify(
+            &srs, &mut trans_seq
+        );
+    
+        verify_time += timer_verify.elapsed().as_secs_f64()/repeat as f64;
+    }
+
+    verify_time = verify_time * 1000.;
+
+
+
+    println!(" ** Verifier time of zkMatMul : {:?}ms", verify_time);
+
+
+    let mut pip_v = Pip::new();
+    let mut trans_seq = zk_trans_seq.publish_trans();
+
+    let result = proj_protocol.verify_as_subprotocol(
+        &srs, &mut trans_seq, &mut pip_v
+    );
+
+    let result2 = pip_v.verify(
+        &srs, &mut trans_seq
+    );
+    
+
+    assert_eq!(result && result2, true);
+
+    println!(" * Verification of Proj passed");
+  
+   
+}
+
 
 fn experiment_srs_gen(log_file: &mut File){
     let srs_timer = Instant::now();

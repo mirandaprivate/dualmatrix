@@ -672,6 +672,44 @@ pub fn gen_matrices_dense(dim: usize
     (c, a, b)
 }
 
+pub fn gen_matrix_dense_1(dim: usize) -> Mat<i64> {
+    let mut sprs = Mat::new(
+        "dense_mat_1",
+        (dim, dim)
+    );
+
+    for i in 0..dim {
+        for j in 0..dim {
+                sprs.push(i, j, 1 as i64);
+        }
+    }
+
+    sprs
+    
+}
+
+pub fn gen_matrix_dense_1_zp(dim: usize) -> Mat<ZpElement> {
+    let mut sprs = Mat::new(
+        "dense_mat_1",
+        (dim, dim)
+    );
+
+    for i in 0..dim {
+        for j in 0..dim {
+                sprs.push(i, j, ZpElement::from(1 as u64));
+        }
+    }
+
+    sprs
+}
+
+
+pub fn gen_vec_1(dim: usize) -> Vec<ZpElement> {
+    std::iter::successors(
+        Some(ZpElement::from(1 as u64)), 
+        |&x| Some(x)
+    ).take(dim).collect::<Vec<ZpElement>>()
+}
 
 #[cfg(test)]
 mod tests{

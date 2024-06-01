@@ -1,1 +1,0 @@
-Data in this folder are supposed to be public to both parties
