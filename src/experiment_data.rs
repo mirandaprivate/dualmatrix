@@ -672,35 +672,26 @@ pub fn gen_matrices_dense(dim: usize
     (c, a, b)
 }
 
-pub fn gen_matrix_dense_1(dim: usize) -> Mat<i64> {
-    let mut sprs = Mat::new(
-        "dense_mat_1",
-        (dim, dim)
-    );
+pub fn gen_matrix_dense_16bit_i64(dim: usize) -> Mat<i64> {
+    let log_dim = (dim as u64).ilog2() as usize;
+    let a_i64 = gen_mat_rand_dense_i64(dim, 16);
 
-    for i in 0..dim {
-        for j in 0..dim {
-                sprs.push(i, j, 1 as i64);
-        }
-    }
-
-    sprs
+  
+    let sparse = dense_to_sprs_from_i64_to_i64(
+        &format!("a_dense_i64_2e{:?}", log_dim), &a_i64);
     
+    sparse
 }
 
 pub fn gen_matrix_dense_1_zp(dim: usize) -> Mat<ZpElement> {
-    let mut sprs = Mat::new(
-        "dense_mat_1",
-        (dim, dim)
-    );
+    let log_dim = (dim as u64).ilog2() as usize;
+    let a_i64 = gen_mat_rand_dense_i64(dim, 16);
 
-    for i in 0..dim {
-        for j in 0..dim {
-                sprs.push(i, j, ZpElement::from(1 as u64));
-        }
-    }
-
-    sprs
+  
+    let sparse = dense_to_sprs_from_i64_to_zp(
+        &format!("a_dense_i64_2e{:?}", log_dim), &a_i64);
+    
+    sparse
 }
 
 

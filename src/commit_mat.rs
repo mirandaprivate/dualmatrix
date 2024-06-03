@@ -25,6 +25,12 @@ pub trait CommitMat {
         &self, g_base_vec: &Vec<G1Element>, h_base_vec: &Vec<G2Element>
     ) -> (GtElement, Vec<G1Element>);
 
+    fn commit_col_major_16bit(
+        &self, g_base_vec: &Vec<G1Element>, h_base_vec: &Vec<G2Element>
+    ) -> (GtElement, Vec<G1Element>) {
+        self.commit_col_major(g_base_vec, h_base_vec)
+    }
+
     fn commit_rm(&self, srs: &SRS) -> (GtElement, Vec<G2Element>) {
         self.commit_row_major(
             &srs.g_hat_vec, &srs.h_hat_vec)
@@ -121,6 +127,28 @@ impl CommitMat for Mat<i64> {
         .unwrap();
         (result, left_cache.clone())
     }
+
+    fn commit_col_major_16bit(
+            &self, g_base_vec: &Vec<G1Element>, h_base_vec: &Vec<G2Element>
+        ) -> (GtElement, Vec<G1Element>) {
+
+        let timer = Instant::now();
+
+        let left_cache = self.bra_16bit(&g_base_vec);
+        
+        
+        let result = dirac::inner_product(
+            &left_cache, &h_base_vec);
+        
+        println!(" ** Time for matrix commitment: {:?}", timer.elapsed());
+
+        left_cache.to_file(
+            format!("{}_lp.cache", self.id), false)
+        .unwrap();
+        (result, left_cache.clone())
+    }
+
+
 }
 
 impl CommitMat for Mat<i128> {

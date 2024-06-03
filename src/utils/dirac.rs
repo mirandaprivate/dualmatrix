@@ -33,6 +33,10 @@ pub trait BraKet{
         let left_proj = self.bra(g_base);
         inner_product(&left_proj, h_base)
     }
+
+    fn bra_16bit(&self, v_base: &Vec<G1Element>) -> Vec<G1Element>{
+        self.bra(v_base)
+    } 
 }
 
 pub trait BraKetZp {
@@ -65,6 +69,10 @@ impl BraKet for Mat<i64> {
 
     fn ket(&self, v_base: &Vec<G2Element>) -> Vec<G2Element> {
         ket_opt_i64(&self, v_base)
+    }
+
+    fn bra_16bit(&self, v_base: &Vec<G1Element>) -> Vec<G1Element> {
+        bra_opt_i64_short_bitmat(&self, v_base, 16)
     }
 }
 
@@ -156,9 +164,10 @@ where
 
 }
 
-pub fn vec_scalar_mul<T> (vector: &Vec<T>, scalar: ZpElement) -> Vec<T>
+pub fn vec_scalar_mul<T, U> (vector: &Vec<T>, scalar: U) -> Vec<T>
 where
-    T: 'static + Clone + Copy + Send + Sync + Mul<ZpElement, Output = T>,
+    T: 'static + Clone + Copy + Send + Sync + Mul<U, Output = T>,
+    U: 'static + Clone + Copy + Send + Sync + Mul<T, Output = T>,
 {
 
     let pool = ThreadPoolBuilder::new()
@@ -429,7 +438,6 @@ pub fn bra_opt_u64(mat_a: &Mat<u64>, v_base: &Vec<G1Element>) -> Vec<G1Element> 
 }
 
 
-
 pub fn ket_opt_u64(mat_a: &Mat<u64>, v_base: &Vec<G2Element>) -> Vec<G2Element> {
     
     let a_data  = &mat_a.data;
@@ -509,6 +517,64 @@ pub fn bra_opt_i64(mat_a: &Mat<i64>, v_base: &Vec<G1Element>) -> Vec<G1Element> 
     
     
     for j_bit in 0..64{
+        let v_base_arc = Arc::new(v_base_mut.clone());
+        
+        pool.install(|| {
+            a_abs_sign.par_iter().for_each(|&(row, col, val, sign)| {
+                let v_base_clone = Arc::clone(&v_base_arc);
+                let result_mutex = &result_mutexes[col];
+                let mut result = result_mutex.lock().unwrap();
+                if (val >> j_bit) & 1 == 1 {
+                    if sign {
+                        *result += - v_base_clone[row];
+                    } else {
+                        *result += v_base_clone[row];
+                    }
+                }
+            });
+        });
+
+        pool.install(|| {
+            v_base_mut.par_iter_mut().for_each(|v| {
+                *v = v.double();
+            });
+        });
+
+    }
+
+
+    result_mutexes.into_iter().map(
+        |mutex| mutex.into_inner().unwrap()
+    ).collect()
+    
+}
+
+pub fn bra_opt_i64_short_bitmat(mat_a: &Mat<i64>, v_base: &Vec<G1Element>, bit_len: usize) 
+-> Vec<G1Element> {
+
+    let n_row = mat_a.shape.0;
+    let n_col = mat_a.shape.1;
+    let mut v_base_mut = v_base[..n_row].to_vec();
+       
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build()
+        .unwrap();
+
+    let a_abs_sign: Vec<(usize, usize, u64, bool)> =  pool.install(
+            || {
+                mat_a.data.par_iter().map(|&(row, col, val)| (
+                        row, col, val.abs() as u64, val < 0,
+                )).collect()
+            }
+    );
+
+    let result_mutexes: Vec<Mutex<G1Element>> = (0..n_col).map(
+        |_| Mutex::new(G1Element::zero())
+    ).collect();
+    
+    
+    for j_bit in 0..bit_len+1{
         let v_base_arc = Arc::new(v_base_mut.clone());
         
         pool.install(|| {
@@ -718,7 +784,6 @@ pub fn ket_opt_i128(mat_a: &Mat<i128>, v_base: &Vec<G2Element>) -> Vec<G2Element
     ).collect()
     
 }
-
 
 
 
