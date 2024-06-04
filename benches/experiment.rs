@@ -50,9 +50,9 @@ fn main(){
     // experiment_gen_matrices(&mut log_file);
     // experiment_commit_matrices(&mut log_file);
     // experiment_matmul(&mut log_file);
-    experiment(&mut log_file);
+    // experiment(&mut log_file);
     // experiment_dense(&mut log_file);
-    // experiment_proj(&mut log_file);
+    experiment_proj(&mut log_file);
 }
 
 
@@ -325,10 +325,10 @@ fn experiment_dense(log_file: &mut File) {
 
 fn experiment_proj(log_file: &mut File) {
 
-    let log_dim = 30 as u32;
+    let log_dim = 26 as u32;
     let sqrt_dim = 2usize.pow(log_dim as u32/2);
-    let count_mat = 70;
-
+    let count_mat = 70 * 2usize.pow(30 - log_dim as u32) as u32;
+    // let count_mat = 3;
      println!(" ** Experiment for proj for {:?} 16-bit matrix,
         Matrix Dim 2e{:?} times 2e{:?}; 
         Number of non-zero elements: 2e{:?};
@@ -433,7 +433,7 @@ fn experiment_proj(log_file: &mut File) {
     for _ in 1..count_mat{
         a_com_g_cum = vec_addition(
             &a_com_g_cum, 
-            &vec_scalar_mul(&a_com_g.clone(),y_exp));
+            &vec_scalar_mul(&a_com_g,y_exp));
         y_exp = y_exp * y;
     }
 
@@ -455,7 +455,7 @@ fn experiment_proj(log_file: &mut File) {
     let mut a_com_cum = a_blind.clone();
     let mut y_exp = y.clone();
     for _ in 1..count_mat{
-        a_com_cum = a_com_cum.clone() + a_com * y_exp;
+        a_com_cum = a_com_cum + a_com * y_exp;
         y_exp = y_exp * y;
     }
 
@@ -464,7 +464,7 @@ fn experiment_proj(log_file: &mut File) {
     let mut c_com_cum = c_blind.clone();
     let mut y_exp = y.clone();
     for _ in 1..count_mat{
-        c_com_cum = c_com_cum.clone() + c_blind * y_exp;
+        c_com_cum = c_com_cum + c_blind * y_exp;
         y_exp = y_exp * y;
     }
 
