@@ -22,9 +22,8 @@ use dualmatrix::setup::SRS;
 
 use dualmatrix::utils::curve::ZpElement;
 use dualmatrix::utils::curve::GtElement;
-use dualmatrix::utils::dirac::inner_product;
 use dualmatrix::utils::dirac::BraKetZp;
-use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul};
+use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul, inner_product};
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
 use dualmatrix::utils::xi::phi_s;
@@ -451,15 +450,12 @@ fn experiment_proj(log_file: &mut File) {
         y_exp = y_exp * y;
     }
 
-   
-    let mut a_com_cum = a_blind.clone();
-    let mut y_exp = y.clone();
-    for _ in 1..count_mat{
-        a_com_cum = a_com_cum + a_com * y_exp;
-        y_exp = y_exp * y;
-    }
-
     let verifier_time_cum_c = Instant::now();
+    
+    let a_com_vec = vec![a_com.clone(); count_mat as usize];
+    let y_vec = (0..count_mat).map(|i| y.pow(i as u64))
+        .collect::<Vec<ZpElement>>();
+    let a_com_cum = inner_product(&a_com_vec, &y_vec);
 
     let mut c_com_cum = c_blind.clone();
     let mut y_exp = y.clone();
@@ -474,18 +470,23 @@ fn experiment_proj(log_file: &mut File) {
     assert_eq!(sum_y * c_tilde, c_tilde_cum);
 
 
-    let verifer_time_cum_c_duration = verifier_time_cum_c.elapsed().as_secs_f64();
+    let verifer_time_cum_c_duration 
+        = verifier_time_cum_c.elapsed().as_secs_f64() * 1000.0;
 
     // The additional time for the projections of 70 matrices
     // It should be conducted within the proj protocol
     // but that will affect our interface
     // So we simulate the cost here
 
+    let mut la_cum = a.bra_zp(&l_vec);
+    let mut y_exp = y.clone();
     for _ in 0..(count_mat-1) {
-        let _ =a.bra_zp(&l_vec);
+        let current_la =  a.bra_zp(&l_vec);
+        la_cum = vec_addition(
+            &la_cum, &vec_scalar_mul(&current_la, y_exp));
+        y_exp = y_exp * y;
     }
     
-
     let proj_protocol = ZkProj::new(
         c_blind,
         a_blind, 
