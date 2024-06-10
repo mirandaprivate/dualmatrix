@@ -33,7 +33,7 @@ pub fn gen_mat_rand_dense_i64(sqrt_dim: usize, max_bit: u32) -> Vec<Vec<i64>>{
     (0..sqrt_dim).map(|_| {
         (0..sqrt_dim).map(|_| {
             rand::thread_rng()
-            .gen_range(-2i64.pow(max_bit)..2i64.pow(max_bit)) as i64
+            .gen_range(-2i64.pow(max_bit)+1..2i64.pow(max_bit)) as i64
         }).collect::<Vec<i64>>()  
     }).collect::<Vec<Vec<i64>>>()
 }
@@ -586,7 +586,7 @@ fn dense_to_sprs_zp(id: &str, dense: &Vec<Vec<ZpElement>>
 
 /// Convert a dense matrix to a sparse matrix in Zp
 /// 
-fn dense_to_sprs_from_i64_to_zp(id: &str, dense: &Vec<Vec<i64>>
+pub fn dense_to_sprs_from_i64_to_zp(id: &str, dense: &Vec<Vec<i64>>
 ) -> Mat<ZpElement> {
     let mut sprs = Mat::new(
         id,
@@ -606,7 +606,7 @@ fn dense_to_sprs_from_i64_to_zp(id: &str, dense: &Vec<Vec<i64>>
 
 /// Convert a dense matrix to a sparse matrix in i64
 /// 
-fn dense_to_sprs_from_i64_to_i64(id: &str, dense: &Vec<Vec<i64>>
+pub fn dense_to_sprs_from_i64_to_i64(id: &str, dense: &Vec<Vec<i64>>
 ) -> Mat<i64> {
     let mut sprs = Mat::new(
         id,

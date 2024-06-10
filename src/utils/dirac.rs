@@ -33,10 +33,6 @@ pub trait BraKet{
         let left_proj = self.bra(g_base);
         inner_product(&left_proj, h_base)
     }
-
-    fn bra_16bit(&self, v_base: &Vec<G1Element>) -> Vec<G1Element>{
-        self.bra(v_base)
-    } 
 }
 
 pub trait BraKetZp {
@@ -69,10 +65,6 @@ impl BraKet for Mat<i64> {
 
     fn ket(&self, v_base: &Vec<G2Element>) -> Vec<G2Element> {
         ket_opt_i64(&self, v_base)
-    }
-
-    fn bra_16bit(&self, v_base: &Vec<G1Element>) -> Vec<G1Element> {
-        bra_opt_i64_short_bitmat(&self, v_base, 16)
     }
 }
 

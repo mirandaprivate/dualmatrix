@@ -27,6 +27,7 @@ use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul, inner_product};
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
 use dualmatrix::utils::xi::phi_s;
+use dualmatrix::utils::opt_16bit;
 
 
 use dualmatrix::zkprotocols::zk_matmul::ZkMatMul;
@@ -49,9 +50,9 @@ fn main(){
     // experiment_gen_matrices(&mut log_file);
     // experiment_commit_matrices(&mut log_file);
     // experiment_matmul(&mut log_file);
-    experiment(&mut log_file);
+    // experiment(&mut log_file);
     // experiment_dense(&mut log_file);
-    // experiment_proj(&mut log_file);
+    experiment_proj(&mut log_file);
 }
 
 
@@ -77,7 +78,8 @@ fn experiment(log_file: &mut File) {
         let srs_duration = srs_timer.elapsed();
 
         println!(" ** SRS generation time: {:?}", srs_duration);
-        writeln!(log_file, " ** SRS generation time: {:?}", srs_duration).unwrap();
+        writeln!(log_file, " ** SRS generation time: {:?}", srs_duration)
+        .unwrap();
 
         let mat_timer = Instant::now();
 
@@ -87,7 +89,8 @@ fn experiment(log_file: &mut File) {
         let mat_duration = mat_timer.elapsed();
 
         println!(" ** Matrix generation time: {:?}", mat_duration);
-        writeln!(log_file, " ** Matrix generation time: {:?}", mat_duration).unwrap();
+        writeln!(log_file, " ** Matrix generation time: {:?}", mat_duration)
+        .unwrap();
 
         // let commit_a_timer = Instant::now();
 
@@ -350,15 +353,31 @@ fn experiment_proj(log_file: &mut File) {
     println!(" ** SRS generation time: {:?}", srs_duration);
     writeln!(log_file, " ** SRS generation time: {:?}", srs_duration).unwrap();
     
+
     // For our mock parameters, we assume the 70 matrices are identical
-    let a = gen_matrix_dense_16bit_i64(sqrt_dim);
+    let a_i16 = experiment_data::gen_mat_rand_dense_i64(sqrt_dim, 10);
+
+    let a = opt_16bit::dense_to_sprs_cm(
+        &format!("a_dense_i64_2e{:?}", log_dim), &a_i16);
+
+    // let a = gen_matrix_dense_16bit_i64(sqrt_dim);
     
+    let double_timer = Instant::now();
+    let double_mat = opt_16bit::fix_base_double(
+        &srs.g_hat_vec, 10);
+    let double_duration = double_timer.elapsed();
+
     let mat_timer = Instant::now();
     
-    let (a_com, a_cache_cm) 
-        = a.commit_col_major_16bit(
-            &srs.g_hat_vec, &srs.h_hat_vec
-        );
+    // let (a_com, a_cache_cm) 
+    //     = a.commit_col_major_16bit(
+    //         &srs.g_hat_vec, &srs.h_hat_vec
+    //     );
+    
+    let a_cache_cm = opt_16bit::first_tier(
+        &a_i16, &double_mat);
+    let a_com = opt_16bit::second_tier(
+        &a_cache_cm, &srs.h_hat_vec);
 
     let l_vec = (0..sqrt_dim).map(|_| 
         ZpElement::rand()
@@ -381,7 +400,7 @@ fn experiment_proj(log_file: &mut File) {
   
     let mat_duration = mat_timer.elapsed();
     println!(" ** comitment time for {:?} matrices: {:?}",
-        count_mat, mat_duration * count_mat);
+        count_mat, double_duration + mat_duration * count_mat);
     
 
     let timer_marginal = Instant::now();
