@@ -112,7 +112,7 @@ pub fn second_tier(g_cache: &Vec<G1Element>, h_vec: &Vec<G2Element>)
 
 /// Convert a dense col major matrix to a sparse matrix in Zp
 /// 
-pub fn dense_to_sprs_cm(id: &str, dense: &Vec<Vec<i64>>
+pub fn dense_to_sprs_cm_i64(id: &str, dense: &Vec<Vec<i64>>
 ) -> Mat<i64> {
     let mut sprs = Mat::new(
         id,
@@ -128,6 +128,64 @@ pub fn dense_to_sprs_cm(id: &str, dense: &Vec<Vec<i64>>
     }
 
     sprs
+}
+
+
+pub fn dense_to_sprs_cm_zp(id: &str, dense: &Vec<Vec<ZpElement>>
+) -> Mat<ZpElement> {
+    let mut sprs = Mat::new(
+        id,
+        (dense.len(), dense[0].len())
+    );
+
+    for i in 0..dense.len() {
+        for j in 0..dense[0].len() {
+            if dense[i][j] != ZpElement::zero() {
+                sprs.push(j, i, dense[i][j]);
+            }
+        }
+    }
+
+    sprs
+}
+
+pub fn dense_i64_to_scalar(a: &Vec<Vec<i64>>)
+-> Vec<Vec<ZpElement>> {
+    let mut b = vec![vec![ZpElement::zero(); a[0].len()]; a.len()];
+
+    let pool = ThreadPoolBuilder::new()
+    .num_threads(NUM_THREADS)
+    .build()
+    .unwrap();
+
+    pool.install(|| {
+        b.par_iter_mut().enumerate().for_each(|(i, row)| {
+            row.iter_mut().enumerate().for_each(|(j, b_ij)| {
+                *b_ij = ZpElement::from(a[i][j]);
+            });
+        });
+    });
+    b
+}
+
+pub fn dense_mat_scalar_addition_zp(a: &Vec<Vec<ZpElement>>, b: &Vec<Vec<ZpElement>>, z: ZpElement)
+-> Vec<Vec<ZpElement>> {
+    let mut c = vec![vec![ZpElement::zero(); a[0].len()]; a.len()];
+
+    let pool = ThreadPoolBuilder::new()
+    .num_threads(NUM_THREADS)
+    .build()
+    .unwrap();
+
+    pool.install(|| {
+        c.par_iter_mut().enumerate().for_each(|(i, row)| {
+            row.iter_mut().enumerate().for_each(|(j, c_ij)| {
+                *c_ij = a[i][j] + z * b[i][j];
+            });
+        });
+    });
+
+    c
 }
 
 
@@ -154,7 +212,7 @@ mod tests {
 
         // println!("a_i64: {:?}", a_i64.len());
 
-        let a_sparse = dense_to_sprs_cm(
+        let a_sparse = dense_to_sprs_cm_i64(
             &format!("a_dense_i64_2e{:?}", log_dim), &a_i64);
 
         let srs = SRS::new(sqrt_dim);

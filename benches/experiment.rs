@@ -16,17 +16,15 @@ use std::fs::File;
 use std::io::Write;
 
 use dualmatrix::commit_mat::CommitMat;
-use dualmatrix::experiment_data::gen_matrix_dense_16bit_i64;
 use dualmatrix::mat::Mat;
 use dualmatrix::setup::SRS;
 
 use dualmatrix::utils::curve::ZpElement;
 use dualmatrix::utils::curve::GtElement;
 use dualmatrix::utils::dirac::BraKetZp;
-use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul, inner_product};
+use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul};
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
-use dualmatrix::utils::xi::phi_s;
 use dualmatrix::utils::opt_16bit;
 
 
@@ -355,29 +353,45 @@ fn experiment_proj(log_file: &mut File) {
     
 
     // For our mock parameters, we assume the 70 matrices are identical
-    let a_i16 = experiment_data::gen_mat_rand_dense_i64(sqrt_dim, 10);
+    // Otherwise it will exceed our memory limit
+    let a_i16 = experiment_data::gen_mat_rand_dense_i64(
+        sqrt_dim, 10);
 
-    let a = opt_16bit::dense_to_sprs_cm(
+    let a = opt_16bit::dense_to_sprs_cm_i64(
         &format!("a_dense_i64_2e{:?}", log_dim), &a_i16);
 
     // let a = gen_matrix_dense_16bit_i64(sqrt_dim);
     
-    let double_timer = Instant::now();
+
+    let commit_timer = Instant::now();
+
+    // let double_timer = Instant::now();
     let double_mat = opt_16bit::fix_base_double(
         &srs.g_hat_vec, 10);
-    let double_duration = double_timer.elapsed();
+    // let double_duration = double_timer.elapsed();
 
-    let mat_timer = Instant::now();
-    
-    // let (a_com, a_cache_cm) 
-    //     = a.commit_col_major_16bit(
-    //         &srs.g_hat_vec, &srs.h_hat_vec
-    //     );
+    let a_cache_cm = opt_16bit::first_tier(
+        &a_i16, &double_mat);
+    let a_com = opt_16bit::second_tier(
+        &a_cache_cm, &srs.h_hat_vec);
+
+    let a_tilde = ZpElement::rand();
+    let a_blind = a_com + a_tilde * srs.blind_base;
+
+    for _ in 1..count_mat{
     
     let a_cache_cm = opt_16bit::first_tier(
         &a_i16, &double_mat);
     let a_com = opt_16bit::second_tier(
         &a_cache_cm, &srs.h_hat_vec);
+
+    let a_tilde = ZpElement::rand();
+    let _ = a_com + a_tilde * srs.blind_base;
+    }
+
+    let commit_duration = commit_timer.elapsed();
+    println!(" ** comitment time for {:?} matrices: {:?}",
+        count_mat, commit_duration );
 
     let l_vec = (0..sqrt_dim).map(|_| 
         ZpElement::rand()
@@ -391,46 +405,27 @@ fn experiment_proj(log_file: &mut File) {
 
     let c_com = c * srs.g_hat * srs.h_hat;
 
-    let a_tilde = ZpElement::rand();
     let c_tilde = ZpElement::rand();
 
     let c_blind = c_com + c_tilde * srs.blind_base;
-    let a_blind = a_com + a_tilde * srs.blind_base;
-
-  
-    let mat_duration = mat_timer.elapsed();
-    println!(" ** comitment time for {:?} matrices: {:?}",
-        count_mat, double_duration + mat_duration * count_mat);
     
-
-    let timer_marginal = Instant::now();
+    // let timer_marginal = Instant::now();
     
     // simulate the complexity of bra_zp on large matrices
         
-    let _ =a.bra_zp(&l_vec);
+    // let _ =a.bra_zp(&l_vec);
 
     // count the additional cost of during the proj
-    for _ in 0..7{
-        inner_product(&l_vec, &r_vec);
-    }
+    // for _ in 0..7{
+    //     inner_product(&l_vec, &r_vec);
+    // }
 
-    let verifier_marginal = Instant::now();
+    // let verifier_marginal = Instant::now();
 
-    let z = ZpElement::rand();
-
-    let _ =  c_com + z.pow(1024 as u64) * c_com;
-    let challenges = (0..log_dim/2).map(|_| 
-        ZpElement::rand()
-    ).collect::<Vec<ZpElement>>();
-
-    phi_s(z, &challenges, 1, 1);
-    phi_s(z, &challenges, 1, srs.q);
-
-    let duration_marginal = timer_marginal.elapsed().as_secs_f64();
-    let verifier_marginal = verifier_marginal.elapsed().as_secs_f64();
-    println!(" ** Prover Marginal time: {:?}ms", duration_marginal*1000.);
-    println!(" ** Verifier Marginal time: {:?}ms", verifier_marginal*1000.);
-
+    // let duration_marginal = timer_marginal.elapsed().as_secs_f64();
+    // let verifier_marginal = verifier_marginal.elapsed().as_secs_f64();
+    // println!(" ** Prover Marginal time: {:?}ms", duration_marginal*1000.);
+    // println!(" ** Verifier Marginal time: {:?}ms", verifier_marginal*1000.);
 
     let proj_timer = Instant::now();
 
@@ -442,12 +437,10 @@ fn experiment_proj(log_file: &mut File) {
 
     let y = ZpElement::rand();
 
+     // sum commitment of 70 matrices
     let a_com_g = a_cache_cm.clone();
     let mut a_com_g_cum = a_cache_cm.clone();
     let mut y_exp = y.clone();
-
-
-    // sum commitment of 70 matrices
     for _ in 1..count_mat{
         a_com_g_cum = vec_addition(
             &a_com_g_cum, 
@@ -469,12 +462,26 @@ fn experiment_proj(log_file: &mut File) {
         y_exp = y_exp * y;
     }
 
+    let a_zp = opt_16bit::dense_i64_to_scalar(&a_i16);
+    let mut a_cum = a_zp.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        a_cum = opt_16bit::dense_mat_scalar_addition_zp(
+            &a_cum, &a_zp, y_exp);
+        y_exp = y_exp * y;
+    }
+
+    let a_cum_zp = opt_16bit::dense_to_sprs_cm_zp(
+        "a_cum_zp", &a_cum);
+
     let verifier_time_cum_c = Instant::now();
     
-    let a_com_vec = vec![a_com.clone(); count_mat as usize];
-    let y_vec = (0..count_mat).map(|i| y.pow(i as u64))
-        .collect::<Vec<ZpElement>>();
-    let a_com_cum = inner_product(&a_com_vec, &y_vec);
+    let mut a_com_cum = a_blind.clone();
+    let mut y_exp = y.clone();
+    for _ in 1..count_mat{
+        a_com_cum = a_com_cum + a_blind * y_exp;
+        y_exp = y_exp * y;
+    }
 
     let mut c_com_cum = c_blind.clone();
     let mut y_exp = y.clone();
@@ -499,16 +506,18 @@ fn experiment_proj(log_file: &mut File) {
 
     let mut la_cum = a.bra_zp(&l_vec);
     let mut y_exp = y.clone();
-    for _ in 0..(count_mat-1) {
+    for _ in 1..count_mat {
         let current_la =  a.bra_zp(&l_vec);
         la_cum = vec_addition(
             &la_cum, &vec_scalar_mul(&current_la, y_exp));
         y_exp = y_exp * y;
     }
-    
+
+ 
+
     let proj_protocol = ZkProj::new(
-        c_blind,
-        a_blind, 
+        c_com_cum,
+        a_com_cum, 
         (sqrt_dim, sqrt_dim), 
         &l_vec, 
         &r_vec,
@@ -518,16 +527,16 @@ fn experiment_proj(log_file: &mut File) {
 
     let mut zk_trans_seq = ZkTranSeqProver::new(&srs);
 
-    let mat_vec = (&vec![a], ZpElement::from(1 as u64));
+    let mat_vec = (&vec![a_cum_zp], ZpElement::from(1 as u64));
 
 
-    proj_protocol.prove::<i64>(
+    proj_protocol.prove::<ZpElement>(
         &srs, 
         &mut zk_trans_seq, 
         mat_vec,
-        &a_cache_cm,
-        c_tilde,
-        a_tilde,
+        &a_com_g_cum,
+        c_tilde_cum,
+        a_tilde_cum,
         &mut pip,
     );
 
