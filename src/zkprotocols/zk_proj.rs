@@ -135,26 +135,27 @@ pub trait ZkProjProtocol:ZkProjInterface {
 
             let current_len = n / 2usize.pow(j as u32);
             
+
             let v_left = 
-                v_current[0..current_len/2].into();
+                v_current[0..current_len/2].to_vec();
             let v_right = 
-                v_current[current_len/2..current_len].into();
+                v_current[current_len/2..current_len].to_vec();
 
             let capital_a_left = 
-                capital_a_current[0..current_len/2].into();
+                capital_a_current[0..current_len/2].to_vec();
             let capital_a_right = 
-                capital_a_current[current_len/2..current_len].into();
+                capital_a_current[current_len/2..current_len].to_vec();
             
             let r_left = 
-                r_current[0..current_len/2].into();
+                r_current[0..current_len/2].to_vec();
             let r_right = 
-                r_current[current_len/2..current_len].into();
+                r_current[current_len/2..current_len].to_vec();
             
 
             let h_left = 
-                h_vec_current[0..current_len/2].into();
+                h_vec_current[0..current_len/2].to_vec();
             let h_right = 
-                h_vec_current[current_len/2..current_len].into();
+                h_vec_current[current_len/2..current_len].to_vec();
 
             let l_tr = 
                 x * dirac::inner_product(&capital_a_left, &h_right)

@@ -15,6 +15,7 @@ use std::fs::OpenOptions;
 use std::fs::File;
 use std::io::Write;
 
+use curv::arithmetic::Zero;
 use dualmatrix::commit_mat::CommitMat;
 use dualmatrix::mat::Mat;
 use dualmatrix::setup::SRS;
@@ -22,7 +23,7 @@ use dualmatrix::setup::SRS;
 use dualmatrix::utils::curve::ZpElement;
 use dualmatrix::utils::curve::GtElement;
 use dualmatrix::utils::dirac::BraKetZp;
-use dualmatrix::utils::dirac::{vec_addition, vec_scalar_mul};
+use dualmatrix::utils::dirac;
 use dualmatrix::utils::fiat_shamir::TranSeq;
 use dualmatrix::utils::to_file::FileIO;
 use dualmatrix::utils::opt_16bit;
@@ -36,6 +37,8 @@ use dualmatrix::experiment_data;
 use dualmatrix::config::{Q, LOG_DIM, SQRT_MATRIX_DIM};
 
 use dualmatrix::zkprotocols::zk_trans::ZkTranSeqProver;
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::*;
 
 fn main(){
     let mut log_file = OpenOptions::new()
@@ -325,20 +328,22 @@ fn experiment_dense(log_file: &mut File) {
 
 fn experiment_proj(log_file: &mut File) {
 
-    let log_dim = 26 as u32;
+    let log_dim = 30 as u32;
     let sqrt_dim = 2usize.pow(log_dim as u32/2);
-    let count_mat = 70 * 2usize.pow(30 - log_dim as u32) as u32;
+    let count_mat = 70 * 2usize.pow(30 - log_dim as u32) as u32 * 2;
     // let count_mat = 3;
      println!(" ** Experiment for proj for {:?} 16-bit matrix,
         Matrix Dim 2e{:?} times 2e{:?}; 
         Number of non-zero elements: 2e{:?};
-        Number of matrices: {:?} **;
+        Number of matrices: {:?}; Mantissa matrices: {:?}; Exponent matrices: {:?} ,
         The projections are batch verified",
     count_mat,
     log_dim/2,
     log_dim/2,
     log_dim,
     count_mat,
+    count_mat/2,
+    count_mat/2,
     );
 
     let srs_timer = Instant::now();
@@ -355,7 +360,7 @@ fn experiment_proj(log_file: &mut File) {
     // For our mock parameters, we assume the 70 matrices are identical
     // Otherwise it will exceed our memory limit
     let a_i16 = experiment_data::gen_mat_rand_dense_i64(
-        sqrt_dim, 10);
+        sqrt_dim, 7);
 
     let a = opt_16bit::dense_to_sprs_cm_i64(
         &format!("a_dense_i64_2e{:?}", log_dim), &a_i16);
@@ -367,7 +372,7 @@ fn experiment_proj(log_file: &mut File) {
 
     // let double_timer = Instant::now();
     let double_mat = opt_16bit::fix_base_double(
-        &srs.g_hat_vec, 10);
+        &srs.g_hat_vec, 7);
     // let double_duration = double_timer.elapsed();
 
     let a_cache_cm = opt_16bit::first_tier(
@@ -380,13 +385,13 @@ fn experiment_proj(log_file: &mut File) {
 
     for _ in 1..count_mat{
     
-    let a_cache_cm = opt_16bit::first_tier(
-        &a_i16, &double_mat);
-    let a_com = opt_16bit::second_tier(
-        &a_cache_cm, &srs.h_hat_vec);
+        let a_cache_cm = opt_16bit::first_tier(
+            &a_i16, &double_mat);
+        let a_com = opt_16bit::second_tier(
+            &a_cache_cm, &srs.h_hat_vec);
 
-    let a_tilde = ZpElement::rand();
-    let _ = a_com + a_tilde * srs.blind_base;
+        let a_tilde = ZpElement::rand();
+        let _ = a_com + a_tilde * srs.blind_base;
     }
 
     let commit_duration = commit_timer.elapsed();
@@ -442,9 +447,9 @@ fn experiment_proj(log_file: &mut File) {
     let mut a_com_g_cum = a_cache_cm.clone();
     let mut y_exp = y.clone();
     for _ in 1..count_mat{
-        a_com_g_cum = vec_addition(
+        a_com_g_cum = dirac::vec_addition_scalar_mul(
             &a_com_g_cum, 
-            &vec_scalar_mul(&a_com_g,y_exp));
+            &a_com_g,y_exp);
         y_exp = y_exp * y;
     }
 
@@ -462,33 +467,61 @@ fn experiment_proj(log_file: &mut File) {
         y_exp = y_exp * y;
     }
 
+    // println!("Start convert a");
+
     let a_zp = opt_16bit::dense_i64_to_scalar(&a_i16);
     let mut a_cum = a_zp.clone();
     let mut y_exp = y.clone();
+
+    // println!("Start summing up a");
     for _ in 1..count_mat{
-        a_cum = opt_16bit::dense_mat_scalar_addition_zp(
-            &a_cum, &a_zp, y_exp);
+        opt_16bit::dense_mat_scalar_addition_zp(
+            &mut a_cum, &a_zp, y_exp);
         y_exp = y_exp * y;
     }
 
+    // println!("Start convert a_cum");
     let a_cum_zp = opt_16bit::dense_to_sprs_cm_zp(
         "a_cum_zp", &a_cum);
 
     let verifier_time_cum_c = Instant::now();
     
-    let mut a_com_cum = a_blind.clone();
-    let mut y_exp = y.clone();
-    for _ in 1..count_mat{
-        a_com_cum = a_com_cum + a_blind * y_exp;
-        y_exp = y_exp * y;
-    }
 
-    let mut c_com_cum = c_blind.clone();
-    let mut y_exp = y.clone();
-    for _ in 1..count_mat{
-        c_com_cum = c_com_cum + c_blind * y_exp;
-        y_exp = y_exp * y;
-    }
+    // let mut a_com_cum = a_blind.clone();
+    // let mut y_exp = y.clone();
+    // for _ in 1..count_mat{
+    //     a_com_cum = a_com_cum + a_blind * y_exp;
+    //     y_exp = y_exp * y;
+    // }
+
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(64)
+        .build()
+        .unwrap();
+
+    let a_com_cum = pool.install(||
+        (0..count_mat).into_par_iter().map(
+        |i| a_blind.clone() * y.pow(i as u64)
+    ).reduce(|| GtElement::zero(), |a, b| a + b)
+    );
+
+    // assert_eq!(a_com_cum, a_com_cum_new);
+
+    // let mut c_com_cum = c_blind.clone();
+    // let mut y_exp = y.clone();
+    // for _ in 1..count_mat{
+    //     c_com_cum = c_com_cum + c_blind * y_exp;
+    //     y_exp = y_exp * y;
+    // }
+
+
+    let c_com_cum = 
+    pool.install(||
+        (0..count_mat).into_par_iter().map(
+        |i| c_blind.clone() * y.pow(i as u64)
+    ).reduce(|| GtElement::zero(), |a, b| a + b)
+    );
 
     let sum_y = (y_exp - ZpElement::from(1 as u64)) 
         * (y - ZpElement::from(1 as u64)).inv();
@@ -499,19 +532,15 @@ fn experiment_proj(log_file: &mut File) {
     let verifer_time_cum_c_duration 
         = verifier_time_cum_c.elapsed().as_secs_f64() * 1000.0;
 
-    // The additional time for the projections of 70 matrices
-    // It should be conducted within the proj protocol
-    // but that will affect our interface
-    // So we simulate the cost here
-
-    let mut la_cum = a.bra_zp(&l_vec);
-    let mut y_exp = y.clone();
-    for _ in 1..count_mat {
-        let current_la =  a.bra_zp(&l_vec);
-        la_cum = vec_addition(
-            &la_cum, &vec_scalar_mul(&current_la, y_exp));
-        y_exp = y_exp * y;
-    }
+    // // The additional time for the projections of 70 matrices
+    // let mut la_cum = a.bra_zp(&l_vec);
+    // let mut y_exp = y.clone();
+    // for _ in 1..count_mat {
+    //     let current_la =  a.bra_zp(&l_vec);
+    //     la_cum = vec_addition(
+    //         &la_cum, &vec_scalar_mul(&current_la, y_exp));
+    //     y_exp = y_exp * y;
+    // }
 
  
 

@@ -74,28 +74,27 @@ pub fn first_tier(witness_mat: &Vec<Vec<i64>>, g_double_mat: &Vec<Vec<G1Element>
         let g_double_vec = &g_double_mat[j_bit];
         let g_double_vec_arc = Arc::new(g_double_vec);
 
-        let g_cache_current = abs_sign_mat.par_iter()
-        .map(|col| {
-            // println!("col: {:?}", col);
-            // let count_neg = col.iter().filter(|&&(_, sign)| sign).count();
-            // println!("count_neg_real: {:?}", count_neg);
-            let g_double_vec_clone = Arc::clone(&g_double_vec_arc);
-            let mut g_com_col = G1Element::zero();
-            // let mut count_neg = 0;
-            col.iter().enumerate().for_each(|(i, &(val, sign))| {
-                // println!("i:{:?}, val: {:?}, sign: {:?}", i, val, sign);
-                // if sign {count_neg += 1;}
-                if (val >> j_bit) & 1 == 1 {
-                    if sign {
-                        g_com_col += - g_double_vec_clone[i];
-                    } else {
-                        g_com_col += g_double_vec_clone[i];
+        let g_cache_current = pool.install(|| {
+            abs_sign_mat.par_iter()
+            .map(|col| {
+                
+                let g_double_vec_clone = Arc::clone(&g_double_vec_arc);
+                let mut g_com_col = G1Element::zero();
+                
+                col.iter().enumerate().for_each(|(i, &(val, sign))| {
+                    // println!("i:{:?}, val: {:?}, sign: {:?}", i, val, sign);
+                    // if sign {count_neg += 1;}
+                    if (val >> j_bit) & 1 == 1 {
+                        if sign {
+                            g_com_col = g_com_col - g_double_vec_clone[i];
+                        } else {
+                            g_com_col += g_double_vec_clone[i];
+                        }
                     }
-                }
-            });
-            // println!("count_neg: {:?}", count_neg);
-            g_com_col
-        }).collect();
+                });
+                g_com_col
+            }).collect()
+        });
 
         g_cache = dirac::vec_addition(&g_cache, &g_cache_current);
     }
@@ -114,18 +113,34 @@ pub fn second_tier(g_cache: &Vec<G1Element>, h_vec: &Vec<G2Element>)
 /// 
 pub fn dense_to_sprs_cm_i64(id: &str, dense: &Vec<Vec<i64>>
 ) -> Mat<i64> {
-    let mut sprs = Mat::new(
-        id,
-        (dense.len(), dense[0].len())
-    );
+    // let mut sprs = Mat::new(
+    //     id,
+    //     (dense.len(), dense[0].len())
+    // );
 
-    for i in 0..dense.len() {
-        for j in 0..dense[0].len() {
-            if dense[i][j] != 0 {
-                sprs.push(j, i, dense[i][j]);
-            }
-        }
-    }
+    // for i in 0..dense.len() {
+    //     for j in 0..dense[0].len() {
+    //         if dense[i][j] != 0 {
+    //             sprs.push(j, i, dense[i][j]);
+    //         }
+    //     }
+    // }
+
+    let pool = ThreadPoolBuilder::new()
+    .num_threads(NUM_THREADS)
+    .build()
+    .unwrap();
+
+    let data_vec: Vec<(usize, usize, i64)> = pool.install(|| {
+        dense.par_iter().enumerate().flat_map(|(j, col)| {
+            col.iter().enumerate().filter_map(|(i, val)| {
+                Some((i,j, *val))
+            }).collect::<Vec<(usize, usize, i64)>>()
+        }).collect()
+    });
+
+    let sprs = Mat::new_from_data_vec(
+        id, (dense.len(), dense[0].len()), data_vec);
 
     sprs
 }
@@ -133,59 +148,82 @@ pub fn dense_to_sprs_cm_i64(id: &str, dense: &Vec<Vec<i64>>
 
 pub fn dense_to_sprs_cm_zp(id: &str, dense: &Vec<Vec<ZpElement>>
 ) -> Mat<ZpElement> {
-    let mut sprs = Mat::new(
-        id,
-        (dense.len(), dense[0].len())
-    );
+    // let mut sprs = Mat::new(
+    //     id,
+    //     (dense.len(), dense[0].len())
+    // );
 
-    for i in 0..dense.len() {
-        for j in 0..dense[0].len() {
-            if dense[i][j] != ZpElement::zero() {
-                sprs.push(j, i, dense[i][j]);
-            }
-        }
-    }
+    let pool = ThreadPoolBuilder::new()
+    .num_threads(NUM_THREADS)
+    .build()
+    .unwrap();
+
+    let data_vec: Vec<(usize, usize, ZpElement)> = pool.install(|| {
+        dense.par_iter().enumerate().flat_map(|(j, col)| {
+            col.iter().enumerate().filter_map(|(i, val)| {
+                Some((i,j, *val))
+            }).collect::<Vec<(usize, usize, ZpElement)>>()
+        }).collect()
+    });
+
+    let sprs = Mat::new_from_data_vec(
+        id, (dense.len(), dense[0].len()), data_vec);
+
+    // for i in 0..dense.len() {
+    //     for j in 0..dense[0].len() {
+    //         if dense[i][j] != ZpElement::zero() {
+    //             sprs.push(j, i, dense[i][j]);
+    //         }
+    //     }
+    // }
 
     sprs
 }
 
 pub fn dense_i64_to_scalar(a: &Vec<Vec<i64>>)
 -> Vec<Vec<ZpElement>> {
-    let mut b = vec![vec![ZpElement::zero(); a[0].len()]; a.len()];
+
 
     let pool = ThreadPoolBuilder::new()
     .num_threads(NUM_THREADS)
     .build()
     .unwrap();
 
-    pool.install(|| {
-        b.par_iter_mut().enumerate().for_each(|(i, row)| {
-            row.iter_mut().enumerate().for_each(|(j, b_ij)| {
-                *b_ij = ZpElement::from(a[i][j]);
-            });
-        });
+    let b = pool.install(|| {
+        a.par_iter().map(|row| {
+            row.iter().map(|a_ij| {
+                ZpElement::from(*a_ij)
+            }).collect::<Vec<ZpElement>>()
+        }).collect::<Vec<Vec<ZpElement>>>()
     });
+
     b
 }
 
-pub fn dense_mat_scalar_addition_zp(a: &Vec<Vec<ZpElement>>, b: &Vec<Vec<ZpElement>>, z: ZpElement)
--> Vec<Vec<ZpElement>> {
-    let mut c = vec![vec![ZpElement::zero(); a[0].len()]; a.len()];
+pub fn dense_mat_scalar_addition_zp(a: &mut Vec<Vec<ZpElement>>, b: &Vec<Vec<ZpElement>>, z: ZpElement)
+{
 
     let pool = ThreadPoolBuilder::new()
     .num_threads(NUM_THREADS)
     .build()
     .unwrap();
 
+    // pool.install(|| {
+    //     c.par_iter_mut().enumerate().for_each(|(i, row)| {
+    //         row.iter_mut().enumerate().for_each(|(j, c_ij)| {
+    //             *c_ij = *c_ij + z * b[i][j];
+    //         });
+    //     });
+    // });
+
     pool.install(|| {
-        c.par_iter_mut().enumerate().for_each(|(i, row)| {
-            row.iter_mut().enumerate().for_each(|(j, c_ij)| {
-                *c_ij = a[i][j] + z * b[i][j];
+        a.par_iter_mut().zip(b.par_iter()).for_each(|(c_row, b_row)| {
+            c_row.iter_mut().zip(b_row.iter()).for_each(|(c_ij, b_ij)| {
+                *c_ij = *c_ij + z * *b_ij;
             });
         });
     });
 
-    c
 }
 
 

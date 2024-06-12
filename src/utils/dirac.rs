@@ -213,6 +213,29 @@ where
 
 }
 
+pub fn vec_addition_scalar_mul (vec_a: &Vec<G1Element>, vec_b: &Vec<G1Element>, z: ZpElement)
+-> Vec<G1Element>
+{
+
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build()
+        .unwrap();
+
+    // println!("Inside vec add");
+    let result = pool.install(|| 
+        {
+            vec_a.par_iter()
+            .zip(vec_b.par_iter())
+            .map(|(&a, &b)| a + b * z)
+            .collect()
+        }
+    );
+
+    return result;
+
+}
+
 
 pub fn vec_convert_to_zp_vec<T> (vec_a: &Vec<T>) -> Vec<ZpElement> 
 where 
