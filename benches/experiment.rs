@@ -32,11 +32,11 @@ use dualmatrix::utils::opt_16bit;
 use dualmatrix::zkprotocols::zk_matmul::ZkMatMul;
 use dualmatrix::zkprotocols::zk_proj::{ZkProj,ZkProjProtocol};
 use dualmatrix::zkprotocols::pip::Pip;
+use dualmatrix::zkprotocols::zk_trans::ZkTranSeqProver;
 
 use dualmatrix::experiment_data;
 use dualmatrix::config::{Q, LOG_DIM, SQRT_MATRIX_DIM};
 
-use dualmatrix::zkprotocols::zk_trans::ZkTranSeqProver;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
 
