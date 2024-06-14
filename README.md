@@ -1,7 +1,7 @@
 # DualMatrix
 
 This folder contains codes for our paper
-*DualMatrix: Scalable zk-SNARKs for Large Sparse Matrix Processing*.
+*Scalable zkSNARKs for Sparse Matrix Computation*.
 
 ## Introduction
 
@@ -65,8 +65,6 @@ $$
 \rbrace.
 $$
 
-We employ the random oracle approach.
-
 For more details, refer to the math in our paper. 
 
 ### Running the Code
@@ -91,10 +89,9 @@ cargo bench
 
 ## Subprotocols
 
-The matrix-multiplication protocol contains three subprotocols:
+The matrix-multiplication protocol contains two subprotocols:
 - Matrix-projection argument
 - Public-inner-product argument
-- Inner product argument in $\mathbb{G}_T$
 
 The matrix-projection argument is for the following relation:
 
