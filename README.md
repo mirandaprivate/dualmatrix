@@ -1,4 +1,4 @@
-# DualMatrix
+# zkSMART
 
 This folder contains codes for our paper
 *Scalable zkSNARKs for Sparse Matrix Computation*.
