@@ -51,14 +51,15 @@ fn main(){
     // experiment_gen_matrices(&mut log_file);
     // experiment_commit_matrices(&mut log_file);
     // experiment_matmul(&mut log_file);
+    experiment_dense(&mut log_file);
     experiment(&mut log_file);
-    // experiment_dense(&mut log_file);
     // experiment_proj(&mut log_file);
 }
 
 
 fn experiment(log_file: &mut File) {
 
+    // let t = 5;
     for t in 2..(LOG_DIM/2+1) {
 
         let log_dim = 2*t;
@@ -180,7 +181,9 @@ fn experiment(log_file: &mut File) {
 
             let timer_verify = Instant::now();
             matmul_protocol.verify(&srs, &mut trans_read);
-            verify_time += timer_verify.elapsed().as_secs_f64()/repeat as f64;
+            let v_time_current = timer_verify.elapsed().as_secs_f64() as f64;
+            // println!(" ** current v time : {:?}ms", v_time_current*1000.);
+            verify_time += v_time_current/repeat as f64;
         }
 
         verify_time = verify_time * 1000.;
@@ -196,15 +199,19 @@ fn experiment(log_file: &mut File) {
 
 fn experiment_dense(log_file: &mut File) {
 
+    let t = 10;
+
     println!(" ** Experiment for dualMatrix, Matrix Dim 2e{:?} times 2e{:?}; Number of non-zero elements: 2e{:?} ** ",
-    LOG_DIM/2,
-    LOG_DIM/2,
-    LOG_DIM,
+    t,
+    t,
+    t * 2,
     );
 
     let srs_timer = Instant::now();
 
-    let srs = SRS::new(2usize.pow(LOG_DIM as u32/2));
+    let dim = 2usize.pow(t as u32);
+
+    let srs = SRS::new(dim);
 
     let srs_duration = srs_timer.elapsed();
 
@@ -214,7 +221,7 @@ fn experiment_dense(log_file: &mut File) {
     let mat_timer = Instant::now();
 
     let (c, a, b) = 
-        experiment_data::gen_matrices_dense(SQRT_MATRIX_DIM);
+        experiment_data::gen_matrices_dense(dim);
     
     c.to_file(c.id.to_string(), false).unwrap();
     a.to_file(a.id.to_string(), false).unwrap();
@@ -267,9 +274,9 @@ fn experiment_dense(log_file: &mut File) {
         commit_cab[0],
         commit_cab[1],
         commit_cab[2], 
-        SQRT_MATRIX_DIM,
-        SQRT_MATRIX_DIM,
-        SQRT_MATRIX_DIM,
+        dim,
+        dim,
+        dim,
     );
     
     let mut zk_trans = ZkTranSeqProver::new(&srs);
@@ -290,26 +297,30 @@ fn experiment_dense(log_file: &mut File) {
     ).unwrap();
 
     trans.save_to_file(
-        format!("tr_2e{:?}", LOG_DIM/2)
+        format!("tr_dense_2e{:?}", t)
     ).unwrap();
 
     let mut trans_read = TranSeq::read_from_file(
-        format!("tr_2e{:?}", LOG_DIM/2)
+        format!("tr_dense_2e{:?}", t)
     );
 
     let timer_verify = Instant::now();
 
     let mut verify_time: f64 = 0.;
     let repeat = 100;
-        
+
     for _ in 0..repeat {
+
         let mut trans_read = TranSeq::read_from_file(
-            format!("tr_2e{:?}", LOG_DIM/2)
+            format!("tr_dense_2e{:?}", t)
         );
+        
 
         let timer_verify = Instant::now();
         matmul_protocol.verify(&srs, &mut trans_read);
-        verify_time += timer_verify.elapsed().as_secs_f64()/repeat as f64;
+        let v_time_current = timer_verify.elapsed().as_secs_f64() as f64;
+        // println!(" ** current v time : {:?}ms", v_time_current*1000.);
+        verify_time += v_time_current/repeat as f64;
     }
 
     verify_time = verify_time * 1000.;

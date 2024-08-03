@@ -29,9 +29,9 @@ use crate::config::NUM_THREADS;
 
 /// Generate a random dense i64 matrix
 /// 
-pub fn gen_mat_rand_dense_i64(sqrt_dim: usize, max_bit: u32) -> Vec<Vec<i64>>{
-    (0..sqrt_dim).map(|_| {
-        (0..sqrt_dim).map(|_| {
+pub fn gen_mat_rand_dense_i64(dim: usize, max_bit: u32) -> Vec<Vec<i64>>{
+    (0..dim).map(|_| {
+        (0..dim).map(|_| {
             rand::thread_rng()
             .gen_range(-2i64.pow(max_bit)+1..2i64.pow(max_bit)) as i64
         }).collect::<Vec<i64>>()  
@@ -40,8 +40,8 @@ pub fn gen_mat_rand_dense_i64(sqrt_dim: usize, max_bit: u32) -> Vec<Vec<i64>>{
 
 /// Generate a random diagonal i64 matrix
 /// 
-pub fn gen_mat_rand_diag_i64(sqrt_dim: usize, max_bit: u32) -> Vec<i64>{
-    (0..sqrt_dim).map(|_| {
+pub fn gen_mat_rand_diag_i64(dim: usize, max_bit: u32) -> Vec<i64>{
+    (0..dim).map(|_| {
         rand::thread_rng()
         .gen_range(-2i64.pow(max_bit)..2i64.pow(max_bit)) as i64
     }).collect::<Vec<i64>>()  
@@ -56,8 +56,8 @@ pub fn pack_dense_to_sprs_i64(
     let mut sprs = Vec::new();
 
     for i in 0..sqrt_n {
-        for j in 0..sqrt_n {
-            for k in 0..sqrt_n {
+        for k in 0..sqrt_n {
+            for j in 0..sqrt_n {
                 sprs.push((i*sqrt_n + k, j * sqrt_n +k, dense_vec[k][i][j]));
             }
         }
@@ -75,8 +75,8 @@ pub fn pack_dense_to_sprs_i128(
     let mut sprs = Vec::new();
 
     for i in 0..sqrt_n {
-        for j in 0..sqrt_n {
-            for k in 0..sqrt_n {
+        for k in 0..sqrt_n {
+            for j in 0..sqrt_n {
                 sprs.push((i*sqrt_n + k, j * sqrt_n +k, dense_vec[k][i][j]));
             }
         }
